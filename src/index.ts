@@ -1,3 +1,6 @@
+export { autoColWidths } from './utils/autoColWidths'
+export type { AutoColWidthsOptions } from './utils/autoColWidths'
+
 export { PositionManager } from './core/PositionManager'
 export type { SizeProvider } from './core/PositionManager'
 export { useVirtualScroll } from './core/useVirtualScroll'

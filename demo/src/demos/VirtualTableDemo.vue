@@ -1,29 +1,16 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed } from 'vue'
 import VirtualTable from '../../../src/components/VirtualTable.vue'
+import { autoColWidths } from '../../../src/utils/autoColWidths'
 import type { ColumnDef, SortChange } from '../../../src/types'
 
-/* ── Columns ──────────────────────────────────────────────── */
-const columns: ColumnDef[] = [
-  { key: 'id',       title: '#',          width: 64,  fixed: 'left' },
-  { key: 'name',     title: 'Name',       minWidth: 160 },
-  { key: 'email',    title: 'Email',      minWidth: 200 },
-  { key: 'role',     title: 'Role',       width: 120 },
-  { key: 'status',   title: 'Status',     width: 100 },
-  { key: 'country',  title: 'Country',    width: 120 },
-  { key: 'score',    title: 'Score',      width: 90 },
-  { key: 'joined',   title: 'Joined',     width: 110 },
-  { key: 'lastSeen', title: 'Last seen',  width: 110 },
-  { key: 'plan',     title: 'Plan',       width: 100, fixed: 'right' },
-]
-
-/* ── Data ─────────────────────────────────────────────────── */
-const ROLES    = ['Admin', 'Developer', 'Designer', 'Analyst', 'Manager', 'Support']
-const STATUSES = ['active', 'inactive', 'pending', 'banned']
+/* ── Data generation ──────────────────────────────────────────────────────── */
+const ROLES     = ['Admin', 'Developer', 'Designer', 'Analyst', 'Manager', 'Support']
+const STATUSES  = ['active', 'inactive', 'pending', 'banned']
 const COUNTRIES = ['USA', 'Germany', 'Japan', 'Brazil', 'India', 'France', 'UK', 'Canada']
-const PLANS    = ['Free', 'Pro', 'Enterprise']
-const FIRST    = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Henry', 'Iris', 'Jack']
-const LAST     = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis']
+const PLANS     = ['Free', 'Pro', 'Enterprise']
+const FIRST     = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Henry', 'Iris', 'Jack']
+const LAST      = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis']
 
 interface UserRow {
   id: number
@@ -58,6 +45,7 @@ function generateUsers(count: number): UserRow[] {
   })
 }
 
+/* ── Row count ────────────────────────────────────────────────────────────── */
 const COUNT_OPTIONS = [1_000, 10_000, 50_000]
 const count = ref(1_000)
 const allRows = shallowRef<UserRow[]>(generateUsers(count.value))
@@ -66,9 +54,10 @@ function changeCount(n: number) {
   count.value = n
   allRows.value = generateUsers(n)
   sortStack.value = []
+  if (autoWidths.value) recalcWidths()
 }
 
-/* ── Sort ─────────────────────────────────────────────────── */
+/* ── Sort ─────────────────────────────────────────────────────────────────── */
 const multiSort = ref(false)
 const sortStack = ref<SortChange[]>([])
 
@@ -89,14 +78,10 @@ const rows = computed<UserRow[]>(() => {
 })
 
 function onSortChange(sort: SortChange | SortChange[]) {
-  if (Array.isArray(sort)) {
-    sortStack.value = sort
-  } else {
-    sortStack.value = sort.direction ? [sort] : []
-  }
+  sortStack.value = Array.isArray(sort) ? sort : (sort.direction ? [sort] : [])
 }
 
-/* ── Pinned rows ──────────────────────────────────────────── */
+/* ── Pinned rows ──────────────────────────────────────────────────────────── */
 const showPinned = ref(false)
 
 const pinnedTop = computed<UserRow[]>(() =>
@@ -111,19 +96,88 @@ const pinnedBottom = computed<UserRow[]>(() =>
     : [],
 )
 
-/* ── Column resizing ──────────────────────────────────────── */
+/* ── autoColWidths ────────────────────────────────────────────────────────── */
+const autoWidths = ref(false)
+const colWidthMap = ref<Map<string, number>>(new Map())
+
+const RAW_COLS: { key: keyof UserRow; title: string }[] = [
+  { key: 'id',       title: '#' },
+  { key: 'name',     title: 'Name' },
+  { key: 'email',    title: 'Email' },
+  { key: 'role',     title: 'Role' },
+  { key: 'status',   title: 'Status' },
+  { key: 'country',  title: 'Country' },
+  { key: 'score',    title: 'Score' },
+  { key: 'joined',   title: 'Joined' },
+  { key: 'lastSeen', title: 'Last seen' },
+  { key: 'plan',     title: 'Plan' },
+]
+
+function recalcWidths() {
+  colWidthMap.value = autoColWidths(
+    RAW_COLS.map(c => ({ key: c.key, title: c.title })),
+    allRows.value.slice(0, 200),
+    { font: '13px sans-serif', padding: 24 },
+  )
+}
+
+/* ── Columns ──────────────────────────────────────────────────────────────── */
 const resizableColumns = ref(false)
 
-/* ── Controls ─────────────────────────────────────────────── */
+const columns = computed((): ColumnDef[] => {
+  const getW = (key: keyof UserRow, fallback: number) =>
+    autoWidths.value ? (colWidthMap.value.get(key) ?? fallback) : fallback
+
+  return [
+    { key: 'id',       title: '#',         width: getW('id', 64),        fixed: 'left' },
+    { key: 'name',     title: 'Name',      width: getW('name', 160),     minWidth: 100 },
+    { key: 'email',    title: 'Email',     width: getW('email', 200),    minWidth: 140 },
+    { key: 'role',     title: 'Role',      width: getW('role', 120) },
+    { key: 'status',   title: 'Status',    width: getW('status', 100) },
+    { key: 'country',  title: 'Country',   width: getW('country', 120) },
+    { key: 'score',    title: 'Score',     width: getW('score', 90) },
+    { key: 'joined',   title: 'Joined',    width: getW('joined', 110) },
+    { key: 'lastSeen', title: 'Last seen', width: getW('lastSeen', 110) },
+    { key: 'plan',     title: 'Plan',      width: getW('plan', 100),     fixed: 'right' },
+  ]
+})
+
+/* ── Lazy loading simulation ──────────────────────────────────────────────── */
+const lazyMode = ref(false)
+const lazyRows = ref<UserRow[]>([])
+const lazyTotal = ref(0)
+const lazyLoading = ref(false)
+const LAZY_PAGE = 100
+const lazyHasMore = computed(() => lazyRows.value.length < lazyTotal.value)
+
+async function lazyLoad(replace = false) {
+  if (lazyLoading.value) return
+  lazyLoading.value = true
+  await new Promise(r => setTimeout(r, 400))  // simulate network
+  const page = replace ? 1 : Math.floor(lazyRows.value.length / LAZY_PAGE) + 1
+  const all = generateUsers(5_000)
+  const offset = (page - 1) * LAZY_PAGE
+  const chunk = all.slice(offset, offset + LAZY_PAGE)
+  lazyRows.value = replace ? chunk : [...lazyRows.value, ...chunk]
+  lazyTotal.value = all.length
+  lazyLoading.value = false
+}
+
+function toggleLazy(on: boolean) {
+  lazyMode.value = on
+  if (on && lazyRows.value.length === 0) lazyLoad(true)
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
 const stickyHeader = ref(true)
 const stickyOffset = ref(0)
 const visibleInfo = ref({ start: 0, end: 0 })
 
 const STATUS_COLOR: Record<string, string> = {
-  active: 'green', inactive: 'yellow', pending: 'blue', banned: 'red'
+  active: 'green', inactive: 'yellow', pending: 'blue', banned: 'red',
 }
 const PLAN_COLOR: Record<string, string> = {
-  Free: 'yellow', Pro: 'blue', Enterprise: 'purple'
+  Free: 'yellow', Pro: 'blue', Enterprise: 'purple',
 }
 </script>
 
@@ -133,13 +187,15 @@ const PLAN_COLOR: Record<string, string> = {
     <aside class="demo-sidebar">
       <h2 class="demo-sidebar__title">VirtualTable</h2>
       <p class="demo-sidebar__desc">
-        Virtual table with sticky header, fixed columns, multi-column sort,
-        pinned rows, and resizable columns.
+        Native <code>&lt;table&gt;</code> with virtual scrolling — spacer rows keep browser column
+        width sync automatic. Sticky header, fixed columns, sort, pinned rows, lazy loading,
+        auto-width measurement.
       </p>
 
       <div class="demo-sidebar__stats">
         <div class="demo-stat">
-          <strong>{{ count.toLocaleString() }}</strong> rows
+          <strong>{{ (lazyMode ? lazyRows.length : count).toLocaleString() }}</strong>
+          <span> / {{ (lazyMode ? lazyTotal : count).toLocaleString() }} rows</span>
         </div>
         <div class="demo-stat">
           Visible <strong>{{ visibleInfo.end - visibleInfo.start + 1 }}</strong>
@@ -149,7 +205,8 @@ const PLAN_COLOR: Record<string, string> = {
         </div>
       </div>
 
-      <div class="demo-sidebar__group">
+      <!-- Row count (only for static mode) -->
+      <div v-if="!lazyMode" class="demo-sidebar__group">
         <label class="demo-sidebar__label">Row count</label>
         <div class="demo-sidebar__row">
           <button
@@ -162,39 +219,99 @@ const PLAN_COLOR: Record<string, string> = {
         </div>
       </div>
 
+      <!-- Feature toggles -->
       <div class="demo-sidebar__group">
-        <label class="demo-sidebar__label" style="display:flex;align-items:center;gap:8px">
+        <label class="demo-sidebar__label">Features</label>
+        <label class="demo-sidebar__check">
           <input v-model="stickyHeader" type="checkbox" />
           Sticky header
         </label>
-        <label class="demo-sidebar__label" style="display:flex;align-items:center;gap:8px">
+        <label class="demo-sidebar__check">
           <input v-model="multiSort" type="checkbox" />
-          Multi-column sort (Shift+click)
+          Multi-column sort <kbd>Shift+click</kbd>
         </label>
-        <label class="demo-sidebar__label" style="display:flex;align-items:center;gap:8px">
+        <label class="demo-sidebar__check">
           <input v-model="showPinned" type="checkbox" />
           Pinned top &amp; bottom rows
         </label>
-        <label class="demo-sidebar__label" style="display:flex;align-items:center;gap:8px">
+        <label class="demo-sidebar__check">
           <input v-model="resizableColumns" type="checkbox" />
           Resizable columns
         </label>
+        <label class="demo-sidebar__check">
+          <input
+            :checked="autoWidths"
+            type="checkbox"
+            @change="autoWidths = !autoWidths; if (autoWidths) recalcWidths()"
+          />
+          autoColWidths — measure content
+        </label>
+        <label class="demo-sidebar__check">
+          <input
+            :checked="lazyMode"
+            type="checkbox"
+            @change="toggleLazy(!lazyMode)"
+          />
+          Lazy loading (infinite scroll)
+        </label>
       </div>
 
+      <!-- Sticky header offset -->
       <div class="demo-sidebar__group">
         <label class="demo-sidebar__label">Header offset: {{ stickyOffset }}px</label>
         <input v-model.number="stickyOffset" type="range" min="0" max="100" class="demo-range" />
       </div>
 
-      <p class="demo-sidebar__desc" style="font-size:11px;margin-top:auto">
-        Click a column to sort. Hold <kbd>Shift</kbd> while clicking for multi-column sort.
-        Fixed columns (#, Plan) stay in place on horizontal scroll.
+      <p class="demo-sidebar__hint">
+        Click column header to sort · <kbd>Shift</kbd>+click for multi-sort ·
+        Fixed columns <em>#</em> and <em>Plan</em> stay on horizontal scroll.
       </p>
     </aside>
 
-    <!-- Table -->
+    <!-- Table viewport -->
     <div class="demo-viewport">
+      <!-- ── Lazy loading mode ─────────────────────────────────────── -->
       <VirtualTable
+        v-if="lazyMode"
+        :columns="columns"
+        :rows="lazyRows"
+        :sticky-header="stickyHeader"
+        :sticky-header-offset="stickyOffset"
+        :sortable="!multiSort"
+        :multi-sort="multiSort"
+        :resizable-columns="resizableColumns"
+        :estimated-item-size="40"
+        :on-load-more="() => lazyLoad(false)"
+        :has-more="lazyHasMore"
+        :is-loading="lazyLoading"
+        :load-more-threshold="200"
+        style="height: 100%; background: var(--color-bg); --vvsk-sticky-bg: var(--color-bg)"
+        @sort-change="onSortChange"
+        @visible-range-change="visibleInfo = $event"
+      >
+        <template #cell="{ row, column, value }">
+          <template v-if="column.key === 'status'">
+            <span :class="`demo-badge demo-badge--${STATUS_COLOR[(row as UserRow).status]}`">{{ value }}</span>
+          </template>
+          <template v-else-if="column.key === 'plan'">
+            <span :class="`demo-badge demo-badge--${PLAN_COLOR[(row as UserRow).plan]}`">{{ value }}</span>
+          </template>
+          <template v-else-if="column.key === 'score'">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="score-bar"><div class="score-bar__fill" :style="{ width: `${(value as number) / 10}%` }" /></div>
+              <span>{{ value }}</span>
+            </div>
+          </template>
+          <template v-else>{{ value }}</template>
+        </template>
+        <template #loading-indicator>
+          <div class="load-indicator">Loading more rows…</div>
+        </template>
+      </VirtualTable>
+
+      <!-- ── Static mode ───────────────────────────────────────────── -->
+      <VirtualTable
+        v-else
         :columns="columns"
         :rows="rows"
         :sticky-header="stickyHeader"
@@ -205,38 +322,32 @@ const PLAN_COLOR: Record<string, string> = {
         :pinned-bottom-rows="pinnedBottom"
         :resizable-columns="resizableColumns"
         :estimated-item-size="40"
-        style="height: 100%; background: var(--color-bg);"
+        style="height: 100%; background: var(--color-bg); --vvsk-sticky-bg: var(--color-bg)"
         @sort-change="onSortChange"
         @visible-range-change="visibleInfo = $event"
       >
-        <!-- Custom header cell -->
-        <template #header-cell="{ column }">
-          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-muted)">
-            {{ column.title }}
-          </span>
-        </template>
-
-        <!-- Custom cells -->
         <template #cell="{ row, column, value }">
           <template v-if="column.key === 'status'">
-            <span :class="`demo-badge demo-badge--${STATUS_COLOR[(row as UserRow).status]}`">
-              {{ value }}
-            </span>
+            <span :class="`demo-badge demo-badge--${STATUS_COLOR[(row as UserRow).status]}`">{{ value }}</span>
           </template>
           <template v-else-if="column.key === 'plan'">
-            <span :class="`demo-badge demo-badge--${PLAN_COLOR[(row as UserRow).plan]}`">
-              {{ value }}
-            </span>
+            <span :class="`demo-badge demo-badge--${PLAN_COLOR[(row as UserRow).plan]}`">{{ value }}</span>
           </template>
           <template v-else-if="column.key === 'score'">
             <div style="display:flex;align-items:center;gap:6px">
-              <div class="score-bar">
-                <div class="score-bar__fill" :style="{ width: `${(value as number) / 10}%` }" />
-              </div>
+              <div class="score-bar"><div class="score-bar__fill" :style="{ width: `${(value as number) / 10}%` }" /></div>
               <span>{{ value }}</span>
             </div>
           </template>
           <template v-else>{{ value }}</template>
+        </template>
+
+        <!-- Custom pinned-bottom cell (totals row) -->
+        <template #pinned-cell="{ row, column, position }">
+          <strong v-if="position === 'bottom' && column.key === 'score'" style="color: var(--color-primary)">
+            {{ (row as UserRow).score.toLocaleString() }}
+          </strong>
+          <span v-else>{{ (row as UserRow)[column.key as keyof UserRow] }}</span>
         </template>
       </VirtualTable>
     </div>
@@ -247,66 +358,58 @@ const PLAN_COLOR: Record<string, string> = {
 .demo { display: flex; height: 100%; overflow: hidden; }
 
 .demo-sidebar {
-  width: 280px; flex-shrink: 0;
+  width: 290px; flex-shrink: 0;
   border-right: 1px solid var(--color-border);
   background: var(--color-surface);
   padding: 20px;
-  display: flex; flex-direction: column; gap: 18px;
+  display: flex; flex-direction: column; gap: 16px;
   overflow-y: auto;
 }
 .demo-sidebar__title { font-size: 18px; font-weight: 700; color: var(--color-primary); margin: 0; }
-.demo-sidebar__desc  { color: var(--color-text-muted); font-size: 13px; line-height: 1.6; margin: 0; }
-.demo-sidebar__stats { display: flex; flex-direction: column; gap: 6px; }
+.demo-sidebar__desc  { color: var(--color-text-muted); font-size: 12px; line-height: 1.6; margin: 0; }
+.demo-sidebar__stats { display: flex; flex-direction: column; gap: 4px; }
 .demo-sidebar__group { display: flex; flex-direction: column; gap: 8px; }
-.demo-sidebar__label { font-size: 12px; color: var(--color-text-muted); font-weight: 600; cursor: pointer; }
+.demo-sidebar__label { font-size: 12px; color: var(--color-text-muted); font-weight: 600; }
+.demo-sidebar__check { font-size: 12px; color: var(--color-text-muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .demo-sidebar__row   { display: flex; gap: 6px; flex-wrap: wrap; }
+.demo-sidebar__hint  { color: var(--color-text-muted); font-size: 11px; line-height: 1.6; margin: 0; margin-top: auto; }
 .demo-range { width: 100%; accent-color: var(--color-primary); }
 
 kbd {
-  font-size: 10px;
-  padding: 1px 5px;
+  font-size: 10px; padding: 1px 5px;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: 3px;
 }
 
+code { font-family: monospace; font-size: 11px; }
+
 .demo-viewport { flex: 1; overflow: hidden; }
 
-.score-bar {
-  width: 50px; height: 4px;
-  background: var(--color-border);
-  border-radius: 2px; overflow: hidden;
-}
-.score-bar__fill {
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: 2px;
-  transition: width 0.2s;
+.score-bar { width: 50px; height: 4px; background: var(--color-border); border-radius: 2px; overflow: hidden; }
+.score-bar__fill { height: 100%; background: var(--color-primary); border-radius: 2px; }
+
+.load-indicator {
+  padding: 12px; text-align: center;
+  font-size: 12px; color: var(--color-text-muted);
 }
 
-:deep(.vvsk-table__header) {
-  background: var(--color-surface) !important;
-  border-bottom: 1px solid var(--color-border);
-}
+/* Override VirtualTable cell styling */
+:deep(.vvsk-table__thead) { background: var(--color-surface); }
 :deep(.vvsk-table__header-cell) {
   padding: 10px 12px;
   border-right: 1px solid var(--color-border);
-  display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
-  min-width: 80px;
 }
 :deep(.vvsk-table__cell) {
   padding: 9px 12px;
   border-right: 1px solid var(--color-border);
-  display: flex; align-items: center;
+  border-bottom: 1px solid var(--color-border);
   font-size: 13px;
-  min-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: var(--color-bg);
 }
-:deep(.vvsk-table__cell--pinned) {
-  background: rgb(99 102 241 / 0.08) !important;
-}
+:deep(.vvsk-table__row:hover .vvsk-table__cell) { background: var(--color-surface) !important; }
 </style>

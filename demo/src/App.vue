@@ -43,17 +43,7 @@ const componentMap = {
       <div class="app-header__brand">
         <span class="app-header__logo">⚡</span>
         <span class="app-header__name">vue-virtual-scroller-kit</span>
-        <span class="demo-tag">v0.1.0</span>
-        <span class="demo-tag">≤ 6 KB gzip</span>
-        <span class="demo-tag">Vue 3 · TypeScript</span>
       </div>
-      <a
-        class="demo-btn"
-        href="https://github.com"
-        target="_blank"
-        rel="noopener"
-        style="font-size:12px"
-      >GitHub</a>
     </header>
 
     <!-- Tabs -->
