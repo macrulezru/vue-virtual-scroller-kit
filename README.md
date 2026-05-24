@@ -406,6 +406,7 @@ Features: sticky header, fixed left/right columns, single/multi-column sort with
 | `hasMore` | `boolean` | `false` | Whether more rows are available to load |
 | `isLoading` | `boolean` | `false` | Whether a load is in progress (prevents duplicate calls) |
 | `loadMoreThreshold` | `number` | `150` | Distance from the bottom edge in px that triggers `onLoadMore` |
+| `uniformRowHeight` | `boolean` | `false` | All rows have identical height — disables `ResizeObserver` to prevent scroll drift. Set `estimatedItemSize` to the exact row height |
 
 ### `ColumnDef`
 
