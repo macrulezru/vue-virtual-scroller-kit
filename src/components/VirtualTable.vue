@@ -26,6 +26,14 @@ const props = withDefaults(
     virtualizeColumns?: boolean
     /** Allow drag-to-resize column borders */
     resizableColumns?: boolean
+    /** Called when user scrolls near the bottom and hasMore is true */
+    onLoadMore?: () => void
+    /** Whether more rows are available to load */
+    hasMore?: boolean
+    /** Whether a load is currently in progress (prevents duplicate calls) */
+    isLoading?: boolean
+    /** Pixels from bottom edge that triggers onLoadMore (default 150) */
+    loadMoreThreshold?: number
   }>(),
   {
     rowHeight: 'auto',
@@ -40,6 +48,9 @@ const props = withDefaults(
     pinnedBottomRows: () => [],
     virtualizeColumns: false,
     resizableColumns: false,
+    hasMore: false,
+    isLoading: false,
+    loadMoreThreshold: 150,
   },
 )
 
@@ -256,6 +267,13 @@ function onScroll(e: Event): void {
   isScrolled.value = el.scrollLeft > 0
   scrollLeft.value = el.scrollLeft
   emit('scroll', e)
+
+  if (props.onLoadMore && props.hasMore && !props.isLoading) {
+    const { scrollTop, scrollHeight, clientHeight } = el
+    if (scrollHeight - scrollTop - clientHeight < props.loadMoreThreshold!) {
+      props.onLoadMore()
+    }
+  }
 }
 
 // ── Pinned rows ───────────────────────────────────────────────────────────────
@@ -399,6 +417,13 @@ onUnmounted(() => {
       </template>
     </VirtualList>
 
+    <!-- Load more indicator -->
+    <div v-if="isLoading && hasMore" class="vvsk-table__loading">
+      <slot name="loading-indicator">
+        <div class="vvsk-table__loading-default">Loading…</div>
+      </slot>
+    </div>
+
     <!-- Pinned bottom rows -->
     <div
       v-if="pinnedBottomRows && pinnedBottomRows.length > 0"
@@ -476,6 +501,18 @@ onUnmounted(() => {
 
 .vvsk-table__cell--pinned {
   font-weight: 600;
+}
+
+.vvsk-table__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.vvsk-table__loading-default {
+  font-size: 13px;
+  opacity: 0.5;
 }
 
 /* Shadow on fixed left columns when scrolled */

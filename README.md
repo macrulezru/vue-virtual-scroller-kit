@@ -34,7 +34,7 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 - **Dynamic row heights** — `ResizeObserver` measures each row after render; position manager updates in O(log n)
 - **VirtualList** — flat list, external scroll container, page-mode (window scroll), DOM recycling pool, scroll restoration
 - **GroupedVirtualList** — collapsible sections with smooth expand/collapse CSS animation
-- **VirtualTable** — sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize columns, column virtualization, pinned top/bottom rows
+- **VirtualTable** — sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize columns, column virtualization, pinned top/bottom rows, built-in lazy loading (`onLoadMore` / `hasMore` / `isLoading`)
 - **VirtualGrid** — fixed-height cells in a responsive auto-column or fixed-column grid
 - **VirtualTree** — hierarchical expand/collapse with lazy child loading, configurable indent
 - **InfiniteLoader** — trigger `onLoadMore` near the bottom, top, or both ends; scroll-position preservation when prepending
@@ -374,6 +374,10 @@ A virtual table built on top of `VirtualList`. Features a sticky header, fixed l
 | `pinnedBottomRows` | `T[]` | `[]` | Rows pinned below the virtual body |
 | `overscan` | `number` | `3` | Extra rows rendered outside the viewport |
 | `keyField` | `string` | `'id'` | Row key field |
+| `onLoadMore` | `() => void` | — | Called when user scrolls near the bottom and `hasMore` is `true` |
+| `hasMore` | `boolean` | `false` | Whether more rows are available to load |
+| `isLoading` | `boolean` | `false` | Whether a load is in progress (prevents duplicate calls) |
+| `loadMoreThreshold` | `number` | `150` | Distance from the bottom edge in px that triggers `onLoadMore` |
 
 ### `ColumnDef`
 
@@ -396,6 +400,7 @@ interface ColumnDef {
 | `#cell` | `{ row: T, column: ColumnDef, value: unknown }` | Custom cell content |
 | `#pinned-row` | `{ row: T, index: number, position: 'top' \| 'bottom' }` | Custom pinned row |
 | `#pinned-cell` | `{ row: T, column: ColumnDef, value: unknown, position }` | Custom pinned cell |
+| `#loading-indicator` | — | Shown at the bottom when `isLoading && hasMore` |
 
 ### Emits
 
@@ -475,6 +480,78 @@ function onSort(sort: SortChange | SortChange[]) {
         {{ value }}
       </span>
       <span v-else>{{ value }}</span>
+    </template>
+  </VirtualTable>
+</template>
+```
+
+**Lazy loading (infinite scroll in table):**
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { VirtualTable } from 'vue-virtual-scroller-kit'
+import type { ColumnDef, SortChange } from 'vue-virtual-scroller-kit'
+
+interface Row { id: number; name: string; email: string }
+
+const columns: ColumnDef[] = [
+  { key: 'id',    title: '#',     width: 60 },
+  { key: 'name',  title: 'Name',  width: 200 },
+  { key: 'email', title: 'Email', minWidth: 160 },
+  { key: '__actions', title: '', width: 80, fixed: 'right' },
+]
+
+const rows = ref<Row[]>([])
+const total = ref(0)
+const isLoading = ref(false)
+const hasMore = computed(() => rows.value.length < total.value)
+
+async function loadRows(page = 1, replace = false) {
+  if (isLoading.value) return
+  isLoading.value = true
+  try {
+    const res = await fetch(`/api/rows?page=${page}&limit=100`)
+    const data = await res.json()
+    rows.value = replace ? data.rows : [...rows.value, ...data.rows]
+    total.value = data.total
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function onSort(sort: SortChange | SortChange[]) {
+  // reset and reload with new sort
+  rows.value = []
+  await loadRows(1, true)
+}
+
+loadRows()
+</script>
+
+<template>
+  <VirtualTable
+    :columns="columns"
+    :rows="rows"
+    key-field="id"
+    sortable
+    resizable-columns
+    :on-load-more="() => loadRows(Math.floor(rows.length / 100) + 1)"
+    :has-more="hasMore"
+    :is-loading="isLoading"
+    :load-more-threshold="200"
+    style="height: 600px"
+    @sort-change="onSort"
+  >
+    <template #cell="{ row, column }">
+      <template v-if="column.key === '__actions'">
+        <button @click="edit(row)">✏</button>
+        <button @click="remove(row)">✕</button>
+      </template>
+      <span v-else>{{ row[column.key] }}</span>
+    </template>
+    <template #loading-indicator>
+      <div style="padding: 12px; text-align: center; opacity: 0.5">Loading…</div>
     </template>
   </VirtualTable>
 </template>
@@ -1180,7 +1257,7 @@ vue-virtual-scroller-kit
 │
 ├── VirtualTable
 │     Sticky header, fixed columns, sort, resize, column virtualization
-│     Pinned top/bottom rows
+│     Pinned top/bottom rows, built-in lazy loading (onLoadMore / hasMore / isLoading)
 │     Backed by VirtualList
 │
 ├── VirtualGrid
