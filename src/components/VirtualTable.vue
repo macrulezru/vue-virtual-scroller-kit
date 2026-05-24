@@ -33,6 +33,8 @@ const props = withDefaults(
     isLoading?: boolean
     /** Pixels from bottom edge that triggers onLoadMore (default 150) */
     loadMoreThreshold?: number
+    /** All rows have the same height — skips ResizeObserver to prevent scroll drift */
+    uniformRowHeight?: boolean
   }>(),
   {
     stickyHeader: true,
@@ -49,6 +51,7 @@ const props = withDefaults(
     hasMore: false,
     isLoading: false,
     loadMoreThreshold: 150,
+    uniformRowHeight: false,
   },
 )
 
@@ -282,7 +285,7 @@ const visibleRows = computed(() =>
 let rowRO: ResizeObserver | null = null
 
 onMounted(() => {
-  if (typeof ResizeObserver === 'undefined') return
+  if (typeof ResizeObserver === 'undefined' || props.uniformRowHeight) return
   rowRO = new ResizeObserver((entries) => {
     for (const entry of entries) {
       const el = entry.target as HTMLElement
