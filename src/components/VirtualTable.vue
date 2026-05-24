@@ -217,13 +217,13 @@ function getColStyle(col: ColumnDef, isHeader = false): Record<string, string> {
     style.position = 'sticky'
     style.left = getFixedLeft(col) + 'px'
     style.zIndex = isHeader ? '11' : '2'
-    style.background = 'inherit'
+    style.background = isHeader ? 'inherit' : 'var(--vvsk-sticky-bg, #fff)'
   }
   if (col.fixed === 'right') {
     style.position = 'sticky'
     style.right = getFixedRight(col) + 'px'
     style.zIndex = isHeader ? '11' : '2'
-    style.background = 'inherit'
+    style.background = isHeader ? 'inherit' : 'var(--vvsk-sticky-bg, #fff)'
   }
   return style
 }
