@@ -1,4 +1,13 @@
-# vue-virtual-scroller-kit
+<div align="center" style="background:#111827;border-radius:20px;padding:28px 20px 20px;margin-bottom:32px">
+  <h1 style="color:#f9fafb;margin:0 0 32px;font-size:2.2em;letter-spacing:-0.03em;font-weight:700;font-family:sans-serif">
+    vue-virtual-scroller-kit
+  </h1>
+  <img
+    src="https://s3.twcstorage.ru/c9a2cc89-780f97fd-311d-4a1a-b86f-c25665c9dc46/images/npm/vue-virtual-scroller-kit.webp"
+    alt="vue-virtual-scroller-kit"
+    style="max-width:100%;width:auto;height:300px;border-radius:12px"
+  />
+</div>
 
 Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measured by `ResizeObserver`, grouping with animated expand/collapse, sticky headers, infinite scroll, keyboard navigation, drag-to-reorder, and full SSR support — all with a single peer dependency (Vue 3).
 
@@ -21,6 +30,7 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 - [useVirtualKeyboardNav](#usevirtualkeyboardnav)
 - [useDraggableList](#usedraggablelist)
 - [PositionManager](#positionmanager)
+- [autoColWidths](#autocolwidths)
 - [TypeScript types](#typescript-types)
 - [Accessibility](#accessibility)
 - [SSR compatibility](#ssr-compatibility)
@@ -34,7 +44,7 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 - **Dynamic row heights** — `ResizeObserver` measures each row after render; position manager updates in O(log n)
 - **VirtualList** — flat list, external scroll container, page-mode (window scroll), DOM recycling pool, scroll restoration
 - **GroupedVirtualList** — collapsible sections with smooth expand/collapse CSS animation
-- **VirtualTable** — sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize columns, column virtualization, pinned top/bottom rows, built-in lazy loading (`onLoadMore` / `hasMore` / `isLoading`)
+- **VirtualTable** — native `<table>` with spacer-row virtual scroll, sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize columns, column virtualization, pinned top/bottom rows (`<thead>`/`<tfoot>`), built-in lazy loading (`onLoadMore` / `hasMore` / `isLoading`)
 - **VirtualGrid** — fixed-height cells in a responsive auto-column or fixed-column grid
 - **VirtualTree** — hierarchical expand/collapse with lazy child loading, configurable indent
 - **InfiniteLoader** — trigger `onLoadMore` near the bottom, top, or both ends; scroll-position preservation when prepending
@@ -43,6 +53,7 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 - **useVirtualKeyboardNav** — arrow keys, Home/End, PageUp/PageDown, Enter/Space; plugs into any virtual list
 - **useDraggableList** — pointer-event drag-to-reorder with animated gap, ghost element, auto-scroll, disabled-item support
 - **PositionManager** — segment tree (O(log n) updates and prefix-sum queries) exposed for advanced use
+- **autoColWidths** — estimates column widths from a data sample via Canvas `measureText`; SSR-safe fallback
 - **SSR-safe** — first N rows rendered on the server, hydration without layout shift
 - **Zero external dependencies** — only Vue 3 as peer dep
 - **Tree-shakeable ESM + CJS** dual build
@@ -354,7 +365,25 @@ function collapseAll() {
 
 ## VirtualTable
 
-A virtual table built on top of `VirtualList`. Features a sticky header, fixed left/right columns, single/multi-column sort, optional drag-to-resize column borders, horizontal column virtualization, and pinned top/bottom rows.
+A virtual table rendered as a native `<table>` element. The component uses `<thead>` / `<tbody>` / `<tfoot>` with two spacer rows (top and bottom) to create the virtual scroll effect while keeping the browser's built-in column width synchronisation between header and body. Row heights are measured by `ResizeObserver` after each render, so rows can have arbitrary content.
+
+Features: sticky header, fixed left/right columns, single/multi-column sort with sort-stack indicator, optional drag-to-resize columns, horizontal column virtualization, pinned top/bottom rows, and built-in infinite scroll (`onLoadMore`).
+
+### Architecture
+
+```
+<div class="vvsk-table">          ← scroll container (overflow: auto)
+  <table>
+    <colgroup>                    ← column widths, auto-syncs header ↔ body
+    <thead>                       ← position: sticky top; contains header row
+      <tr> … <th> …               ← column headers (sort on click)
+      <tr> … <td> …               ← pinnedTopRows (always visible, sticky)
+    <tbody>
+      <tr class="spacer">         ← top virtual space (height = offsetTop)
+      <tr v-for visibleRows>      ← only rendered rows
+      <tr class="spacer">         ← bottom virtual space
+    <tfoot>                       ← position: sticky bottom; pinnedBottomRows
+```
 
 ### Props
 
@@ -362,18 +391,17 @@ A virtual table built on top of `VirtualList`. Features a sticky header, fixed l
 |---|---|---|---|
 | `columns` | `ColumnDef[]` | — | Column definitions |
 | `rows` | `T[]` | — | Data rows |
-| `rowHeight` | `number \| 'auto'` | `'auto'` | Fixed row height, or `'auto'` for measured heights |
-| `estimatedItemSize` | `number` | `40` | Estimated row height when `rowHeight` is `'auto'` |
-| `stickyHeader` | `boolean` | `true` | Pin the header to the top |
-| `stickyHeaderOffset` | `number` | `0` | Top offset for the sticky header (use when a navbar sits above) |
+| `estimatedItemSize` | `number` | `40` | Estimated row height used before measurement |
+| `stickyHeader` | `boolean` | `true` | Pin the header row to the top |
+| `stickyHeaderOffset` | `number` | `0` | Top offset for the sticky header (e.g. navbar height) |
 | `sortable` | `boolean` | `false` | Enable single-column sort on header click |
 | `multiSort` | `boolean` | `false` | Enable Shift+click multi-column sort |
 | `virtualizeColumns` | `boolean` | `false` | Render only horizontally visible columns (for 50+ columns) |
 | `resizableColumns` | `boolean` | `false` | Allow drag-to-resize column borders |
-| `pinnedTopRows` | `T[]` | `[]` | Rows pinned above the virtual body |
-| `pinnedBottomRows` | `T[]` | `[]` | Rows pinned below the virtual body |
+| `pinnedTopRows` | `T[]` | `[]` | Rows pinned inside `<thead>`, always visible at the top |
+| `pinnedBottomRows` | `T[]` | `[]` | Rows pinned inside `<tfoot>`, always visible at the bottom |
 | `overscan` | `number` | `3` | Extra rows rendered outside the viewport |
-| `keyField` | `string` | `'id'` | Row key field |
+| `keyField` | `string` | `'id'` | Row key field (must be unique per row) |
 | `onLoadMore` | `() => void` | — | Called when user scrolls near the bottom and `hasMore` is `true` |
 | `hasMore` | `boolean` | `false` | Whether more rows are available to load |
 | `isLoading` | `boolean` | `false` | Whether a load is in progress (prevents duplicate calls) |
@@ -383,11 +411,12 @@ A virtual table built on top of `VirtualList`. Features a sticky header, fixed l
 
 ```ts
 interface ColumnDef {
-  key: string          // matches the row object property
-  title: string        // header label
-  width?: number       // fixed column width in px
-  minWidth?: number    // minimum width (also used as fallback)
-  fixed?: 'left' | 'right'  // sticky fixed column
+  key: string                    // matches the row object property
+  title: string                  // header label
+  width?: number                 // column width in px (fallback: minWidth ?? 100)
+  minWidth?: number              // minimum width after drag-resize
+  maxWidth?: number              // maximum width after drag-resize
+  fixed?: 'left' | 'right'      // sticky fixed column
 }
 ```
 
@@ -395,21 +424,21 @@ interface ColumnDef {
 
 | Slot | Scope | Description |
 |---|---|---|
-| `#header-cell` | `{ column: ColumnDef }` | Custom header cell |
-| `#row` | `{ row: T, index: number }` | Replace entire row rendering |
+| `#header-cell` | `{ column: ColumnDef }` | Custom header cell content. Default renders title + sort arrow (↑/↓) for the active sort column only |
+| `#row` | `{ row: T, index: number }` | Replace entire `<tr>` rendering |
 | `#cell` | `{ row: T, column: ColumnDef, value: unknown }` | Custom cell content |
-| `#pinned-row` | `{ row: T, index: number, position: 'top' \| 'bottom' }` | Custom pinned row |
-| `#pinned-cell` | `{ row: T, column: ColumnDef, value: unknown, position }` | Custom pinned cell |
-| `#loading-indicator` | — | Shown at the bottom when `isLoading && hasMore` |
+| `#pinned-row` | `{ row: T, index: number, position: 'top' \| 'bottom' }` | Replace entire pinned `<tr>` |
+| `#pinned-cell` | `{ row: T, column: ColumnDef, value: unknown, position: 'top' \| 'bottom' }` | Custom pinned cell content |
+| `#loading-indicator` | — | Shown below the table when `isLoading && hasMore` |
 
 ### Emits
 
 | Event | Payload | Description |
 |---|---|---|
-| `sort-change` | `SortChange \| SortChange[]` | Single sort object, or array for multi-sort |
-| `column-resize` | `[key: string, width: number]` | Fires after a column is resized |
-| `scroll` | `Event` | Native scroll event |
-| `visible-range-change` | `{ start: number; end: number }` | Visible row range |
+| `sort-change` | `SortChange \| SortChange[]` | Single sort object (sortable), or array (multiSort) |
+| `column-resize` | `[key: string, width: number]` | Fires after a column drag-resize ends |
+| `scroll` | `Event` | Native scroll event from the container |
+| `visible-range-change` | `{ start: number; end: number }` | Fires on scroll with the current visible row indices |
 
 ### `SortChange`
 
@@ -423,14 +452,32 @@ interface SortChange {
 ### Exposed API
 
 ```ts
-const tableRef = ref<{ scrollTo: ...; clearSort: () => void; getSortStack: () => SortChange[] } | null>(null)
+import type { VirtualListExpose } from 'vue-virtual-scroller-kit'
 
-tableRef.value?.scrollTo(rowIndex, 'start')
+const tableRef = ref<VirtualListExpose & {
+  getSortStack: () => SortChange[]
+  clearSort: () => void
+} | null>(null)
+
+tableRef.value?.scrollTo(rowIndex, 'start')   // 'start' | 'center' | 'end' | 'auto'
+tableRef.value?.scrollToOffset(px)
 tableRef.value?.clearSort()
-tableRef.value?.getSortStack()   // current sort state
+tableRef.value?.getSortStack()                 // current sort state
 ```
 
-### Example
+### CSS custom property
+
+Fixed columns and pinned rows use `--vvsk-sticky-bg` for their cell background to cover scrolling content behind them. Set it on the table element to match your theme:
+
+```css
+.my-table { --vvsk-sticky-bg: var(--surface-color); }
+```
+
+Default fallback is `#fff`.
+
+### Examples
+
+**Basic — sort, fixed columns, custom cells, resizable columns:**
 
 ```vue
 <script setup lang="ts">
@@ -440,24 +487,24 @@ import type { ColumnDef, SortChange } from 'vue-virtual-scroller-kit'
 
 interface User { id: number; name: string; email: string; age: number }
 
+const originalRows: User[] = [
+  { id: 1, name: 'Alice', email: 'alice@example.com', age: 28 },
+  { id: 2, name: 'Bob',   email: 'bob@example.com',   age: 35 },
+  // …
+]
+
 const columns: ColumnDef[] = [
-  { key: 'id',    title: '#',     width: 60, fixed: 'left' },
+  { key: 'id',    title: '#',     width: 60,  fixed: 'left' },
   { key: 'name',  title: 'Name',  width: 180 },
   { key: 'email', title: 'Email', minWidth: 200 },
   { key: 'age',   title: 'Age',   width: 80 },
 ]
 
-const rows = ref<User[]>([
-  { id: 1, name: 'Alice', email: 'alice@example.com', age: 28 },
-  // …
-])
+const rows = ref<User[]>([...originalRows])
 
 function onSort(sort: SortChange | SortChange[]) {
   const s = Array.isArray(sort) ? sort[0] : sort
-  if (!s.direction) {
-    rows.value = [...originalRows]
-    return
-  }
+  if (!s || !s.direction) { rows.value = [...originalRows]; return }
   rows.value = [...rows.value].sort((a, b) =>
     s.direction === 'asc'
       ? String(a[s.key as keyof User]).localeCompare(String(b[s.key as keyof User]))
@@ -470,6 +517,7 @@ function onSort(sort: SortChange | SortChange[]) {
   <VirtualTable
     :columns="columns"
     :rows="rows"
+    key-field="id"
     sortable
     resizable-columns
     style="height: 500px"
@@ -485,48 +533,139 @@ function onSort(sort: SortChange | SortChange[]) {
 </template>
 ```
 
-**Lazy loading (infinite scroll in table):**
+---
+
+**Multi-column sort** (Shift+click to add columns to sort stack):
+
+```vue
+<VirtualTable
+  :columns="columns"
+  :rows="rows"
+  multi-sort
+  style="height: 500px"
+  @sort-change="onMultiSort"
+/>
+```
+
+```ts
+function onMultiSort(sort: SortChange | SortChange[]) {
+  const stack = Array.isArray(sort) ? sort : [sort]
+  rows.value = [...rows.value].sort((a, b) => {
+    for (const { key, direction } of stack) {
+      if (!direction) continue
+      const cmp = String(a[key as keyof Row]).localeCompare(String(b[key as keyof Row]))
+      if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+    }
+    return 0
+  })
+}
+```
+
+---
+
+**Auto column widths** — measure content with Canvas before rendering:
+
+```ts
+import { autoColWidths } from 'vue-virtual-scroller-kit'
+import type { ColumnDef } from 'vue-virtual-scroller-kit'
+
+const rawCols = [
+  { key: 'id',    title: 'ID' },
+  { key: 'name',  title: 'Name' },
+  { key: 'email', title: 'Email' },
+]
+
+// Call after rows are loaded
+const widths = autoColWidths(rawCols, rows, {
+  font: '12px Inter, sans-serif',
+  padding: 24,
+  maxWidth: 400,
+})
+
+const columns: ColumnDef[] = rawCols.map(c => ({
+  key: c.key,
+  title: c.title,
+  width: widths.get(c.key) ?? 120,
+  minWidth: 60,
+}))
+```
+
+---
+
+**Pinned rows** — rows that stay visible while the body scrolls. Top rows live in `<thead>` (sticky to top), bottom rows live in `<tfoot>` (sticky to bottom):
+
+```vue
+<script setup lang="ts">
+const pinnedTop    = [{ id: -1, name: '📌 Pinned', score: 0 }]
+const pinnedBottom = [{ id: -2, name: '∑ Total',  score: totalScore }]
+</script>
+
+<template>
+  <VirtualTable
+    :columns="columns"
+    :rows="rows"
+    :pinned-top-rows="pinnedTop"
+    :pinned-bottom-rows="pinnedBottom"
+    style="height: 500px; --vvsk-sticky-bg: #fff"
+  >
+    <template #pinned-cell="{ row, column, position }">
+      <strong v-if="position === 'bottom'">{{ row[column.key] }}</strong>
+      <span v-else>{{ row[column.key] }}</span>
+    </template>
+  </VirtualTable>
+</template>
+```
+
+> Pinned cells automatically receive `background-color: var(--vvsk-sticky-bg, #fff)` so they always cover the scrolling rows behind them.
+
+---
+
+**Lazy loading** — infinite scroll triggered when near the bottom:
 
 ```vue
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { VirtualTable } from 'vue-virtual-scroller-kit'
+import { VirtualTable, autoColWidths } from 'vue-virtual-scroller-kit'
 import type { ColumnDef, SortChange } from 'vue-virtual-scroller-kit'
 
 interface Row { id: number; name: string; email: string }
 
-const columns: ColumnDef[] = [
-  { key: 'id',    title: '#',     width: 60 },
-  { key: 'name',  title: 'Name',  width: 200 },
-  { key: 'email', title: 'Email', minWidth: 160 },
-  { key: '__actions', title: '', width: 80, fixed: 'right' },
-]
+const PAGE = 100
+const rows      = ref<Row[]>([])
+const total     = ref(0)
+const loading   = ref(false)
+const hasMore   = computed(() => rows.value.length < total.value)
 
-const rows = ref<Row[]>([])
-const total = ref(0)
-const isLoading = ref(false)
-const hasMore = computed(() => rows.value.length < total.value)
+// Columns sized from data after first load
+const colWidths = ref<Map<string, number>>(new Map())
+const rawCols   = [{ key: 'id', title: '#' }, { key: 'name', title: 'Name' }, { key: 'email', title: 'Email' }]
+const columns   = computed((): ColumnDef[] => [
+  ...rawCols.map(c => ({ key: c.key, title: c.title, width: colWidths.value.get(c.key) ?? 120, minWidth: 60 })),
+  { key: '__actions', title: '', width: 80, fixed: 'right' as const },
+])
 
-async function loadRows(page = 1, replace = false) {
-  if (isLoading.value) return
-  isLoading.value = true
+async function fetchRows(page: number, replace: boolean) {
+  if (loading.value) return
+  loading.value = true
   try {
-    const res = await fetch(`/api/rows?page=${page}&limit=100`)
+    const res  = await fetch(`/api/rows?page=${page}&limit=${PAGE}`)
     const data = await res.json()
-    rows.value = replace ? data.rows : [...rows.value, ...data.rows]
+    rows.value  = replace ? data.rows : [...rows.value, ...data.rows]
     total.value = data.total
+    if (replace) colWidths.value = autoColWidths(rawCols, rows.value, { font: '12px Inter, sans-serif' })
   } finally {
-    isLoading.value = false
+    loading.value = false
   }
 }
 
-async function onSort(sort: SortChange | SortChange[]) {
-  // reset and reload with new sort
+function loadMore() { fetchRows(Math.floor(rows.value.length / PAGE) + 1, false) }
+
+function onSort(sort: SortChange | SortChange[]) {
   rows.value = []
-  await loadRows(1, true)
+  fetchRows(1, true)
 }
 
-loadRows()
+fetchRows(1, true)
 </script>
 
 <template>
@@ -536,11 +675,11 @@ loadRows()
     key-field="id"
     sortable
     resizable-columns
-    :on-load-more="() => loadRows(Math.floor(rows.length / 100) + 1)"
+    :on-load-more="loadMore"
     :has-more="hasMore"
-    :is-loading="isLoading"
+    :is-loading="loading"
     :load-more-threshold="200"
-    style="height: 600px"
+    style="height: 600px; --vvsk-sticky-bg: #fff"
     @sort-change="onSort"
   >
     <template #cell="{ row, column }">
@@ -548,13 +687,26 @@ loadRows()
         <button @click="edit(row)">✏</button>
         <button @click="remove(row)">✕</button>
       </template>
-      <span v-else>{{ row[column.key] }}</span>
+      <span v-else>{{ row[column.key as keyof Row] }}</span>
     </template>
     <template #loading-indicator>
       <div style="padding: 12px; text-align: center; opacity: 0.5">Loading…</div>
     </template>
   </VirtualTable>
 </template>
+```
+
+---
+
+**Column virtualization** — for very wide tables (100+ columns), render only visible columns:
+
+```vue
+<VirtualTable
+  :columns="columns"
+  :rows="rows"
+  :virtualize-columns="true"
+  style="height: 500px"
+/>
 ```
 
 ---
@@ -1147,6 +1299,67 @@ manager.set(index, height)     // update measured height, O(log n)
 ```
 
 Use `PositionManager` when building completely custom virtualised layouts that don't fit the provided components.
+
+---
+
+## autoColWidths
+
+Utility function that estimates column widths from a data sample using the Canvas API `measureText`. Useful for setting initial `ColumnDef.width` values in `VirtualTable` based on actual content.
+
+```ts
+import { autoColWidths } from 'vue-virtual-scroller-kit'
+
+const widths = autoColWidths(columns, rows, options)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cols` | `{ key: string; title: string }[]` | Column definitions — key and header title |
+| `rows` | `T[]` | Data rows to measure |
+| `options` | `AutoColWidthsOptions` | Optional settings (see below) |
+
+### `AutoColWidthsOptions`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `font` | `string` | `'12px sans-serif'` | CSS font string — should match your cell font |
+| `padding` | `number` | `24` | Extra px added to measured width (accounts for cell padding) |
+| `minWidth` | `number` | `60` | Minimum column width in px |
+| `maxWidth` | `number` | `320` | Maximum column width in px |
+
+### Return value
+
+`Map<string, number>` — maps each column key to a pixel width.
+
+### Example
+
+```ts
+import { autoColWidths } from 'vue-virtual-scroller-kit'
+import type { ColumnDef } from 'vue-virtual-scroller-kit'
+
+const rawCols = [
+  { key: 'id', title: 'ID' },
+  { key: 'name', title: 'Name' },
+  { key: 'email', title: 'Email' },
+]
+
+const widths = autoColWidths(rawCols, rows, {
+  font: '12px Inter, sans-serif',
+  padding: 24,
+  maxWidth: 400,
+})
+
+const columns: ColumnDef[] = rawCols.map(c => ({
+  key: c.key,
+  title: c.title,
+  width: widths.get(c.key) ?? 120,
+  minWidth: 60,
+}))
+```
+
+> **SSR note:** `autoColWidths` uses `document.createElement('canvas')` internally. In SSR environments where `document` is unavailable it falls back to a uniform width of `120px`.
 
 ---
 

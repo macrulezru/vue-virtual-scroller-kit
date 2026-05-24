@@ -1,14 +1,13 @@
 <script setup lang="ts" generic="T">
-import { computed, onUnmounted, ref, watch } from 'vue'
-import VirtualList from './VirtualList.vue'
+import { computed, onMounted, onUnmounted, ref, watch, type CSSProperties } from 'vue'
+import { useVirtualScroll } from '../core/useVirtualScroll'
 import { PositionManager } from '../core/PositionManager'
-import type { ColumnDef, SortChange, VirtualListExpose } from '../types'
+import type { ColumnDef, SortChange } from '../types'
 
 const props = withDefaults(
   defineProps<{
     columns: ColumnDef[]
     rows: T[]
-    rowHeight?: number | 'auto'
     stickyHeader?: boolean
     stickyHeaderOffset?: number
     /** Single-column sort */
@@ -18,9 +17,9 @@ const props = withDefaults(
     estimatedItemSize?: number
     overscan?: number
     keyField?: string
-    /** Rows pinned to the top (rendered outside virtual list) */
+    /** Rows pinned to the top (rendered inside <thead>, always visible) */
     pinnedTopRows?: T[]
-    /** Rows pinned to the bottom (rendered outside virtual list) */
+    /** Rows pinned to the bottom (rendered inside <tfoot>, always visible) */
     pinnedBottomRows?: T[]
     /** Render only horizontally visible columns */
     virtualizeColumns?: boolean
@@ -36,7 +35,6 @@ const props = withDefaults(
     loadMoreThreshold?: number
   }>(),
   {
-    rowHeight: 'auto',
     stickyHeader: true,
     stickyHeaderOffset: 0,
     sortable: false,
@@ -61,8 +59,21 @@ const emit = defineEmits<{
   'column-resize': [key: string, width: number]
 }>()
 
+defineSlots<{
+  'header-cell'(props: { column: ColumnDef }): unknown
+  'cell'(props: { row: T; column: ColumnDef; value: unknown }): unknown
+  'row'(props: { row: T; index: number }): unknown
+  'pinned-row'(props: { row: T; index: number; position: 'top' | 'bottom' }): unknown
+  'pinned-cell'(props: {
+    row: T
+    column: ColumnDef
+    value: unknown
+    position: 'top' | 'bottom'
+  }): unknown
+  'loading-indicator'(props: Record<string, never>): unknown
+}>()
+
 const scrollContainerRef = ref<HTMLElement | null>(null)
-const listRef = ref<VirtualListExpose | null>(null)
 const isScrolled = ref(false)
 const scrollLeft = ref(0)
 
@@ -105,9 +116,9 @@ function handleSortClick(col: ColumnDef, event: MouseEvent): void {
   }
 }
 
-function getSortIcon(key: string): string {
+function getSortIcon(key: string): string | null {
   const entry = sortStack.value.find((s) => s.key === key)
-  if (!entry || entry.direction === null) return '↕'
+  if (!entry || entry.direction === null) return null
   return entry.direction === 'asc' ? '↑' : '↓'
 }
 
@@ -141,7 +152,11 @@ function startResize(col: ColumnDef, event: PointerEvent): void {
 function onResizeMove(event: PointerEvent): void {
   if (!resizingKey) return
   const delta = event.clientX - resizeStartX
-  const newWidth = Math.max(40, resizeStartWidth + delta)
+  const col = props.columns.find((c) => c.key === resizingKey)
+  if (!col) return
+  const minW = col.minWidth ?? 40
+  const maxW = col.maxWidth ?? 2000
+  const newWidth = Math.min(maxW, Math.max(minW, resizeStartWidth + delta))
   colWidths.value = new Map(colWidths.value).set(resizingKey, newWidth)
 }
 
@@ -171,62 +186,17 @@ const visibleColumns = computed((): ColumnDef[] => {
   const left = scrollLeft.value
   const right = left + containerWidth
 
-  let start = colManager.findIndex(left)
-  let end = colManager.findIndex(right)
-  // include columns fixed left/right always
   const fixedKeys = new Set(props.columns.filter((c) => c.fixed).map((c) => c.key))
-  start = Math.max(0, start - 1)
-  end = Math.min(props.columns.length - 1, end + 1)
+  const start = Math.max(0, colManager.findIndex(left) - 1)
+  const end = Math.min(props.columns.length - 1, colManager.findIndex(right) + 1)
 
   return props.columns.filter((col, i) => fixedKeys.has(col.key) || (i >= start && i <= end))
-})
-
-const colsContainerStyle = computed((): Record<string, string> => {
-  if (!props.virtualizeColumns || !colManager) return {}
-  const containerWidth = scrollContainerRef.value?.clientWidth ?? window.innerWidth
-  const left = scrollLeft.value
-
-  const start = Math.max(0, colManager.findIndex(left) - 1)
-  const paddingLeft = colManager.getOffset(start)
-  const totalCols = props.columns.length
-  const totalWidth = colManager.totalSize
-  const end = Math.min(totalCols - 1, colManager.findIndex(left + containerWidth) + 1)
-  const lastOffset = colManager.getOffset(end + 1)
-  const paddingRight = totalWidth - lastOffset
-
-  return {
-    paddingLeft: `${paddingLeft}px`,
-    paddingRight: `${paddingRight}px`,
-  }
 })
 
 // ── Fixed columns ─────────────────────────────────────────────────────────────
 
 const leftColumns = computed(() => props.columns.filter((c) => c.fixed === 'left'))
 const rightColumns = computed(() => props.columns.filter((c) => c.fixed === 'right'))
-
-function getColStyle(col: ColumnDef, isHeader = false): Record<string, string> {
-  const w = getEffectiveWidth(col)
-  const style: Record<string, string> = {
-    width: `${w}px`,
-    minWidth: `${col.minWidth ?? w}px`,
-    flexShrink: '0',
-    overflow: 'hidden',
-  }
-  if (col.fixed === 'left') {
-    style.position = 'sticky'
-    style.left = getFixedLeft(col) + 'px'
-    style.zIndex = isHeader ? '11' : '2'
-    style.background = isHeader ? 'inherit' : 'var(--vvsk-sticky-bg, #fff)'
-  }
-  if (col.fixed === 'right') {
-    style.position = 'sticky'
-    style.right = getFixedRight(col) + 'px'
-    style.zIndex = isHeader ? '11' : '2'
-    style.background = isHeader ? 'inherit' : 'var(--vvsk-sticky-bg, #fff)'
-  }
-  return style
-}
 
 function getFixedLeft(target: ColumnDef): number {
   let offset = 0
@@ -247,18 +217,115 @@ function getFixedRight(target: ColumnDef): number {
   return offset
 }
 
+function getThStyle(col: ColumnDef): CSSProperties {
+  const style: CSSProperties = {}
+  if (col.fixed === 'left') {
+    style.position = 'sticky'
+    style.left = getFixedLeft(col) + 'px'
+    style.zIndex = 3
+  }
+  if (col.fixed === 'right') {
+    style.position = 'sticky'
+    style.right = getFixedRight(col) + 'px'
+    style.zIndex = 3
+  }
+  return style
+}
+
+function getTdStyle(col: ColumnDef): CSSProperties {
+  const style: CSSProperties = {}
+  if (col.fixed === 'left') {
+    style.position = 'sticky'
+    style.left = getFixedLeft(col) + 'px'
+    style.zIndex = 2
+    style.background = 'var(--vvsk-sticky-bg, #fff)'
+  }
+  if (col.fixed === 'right') {
+    style.position = 'sticky'
+    style.right = getFixedRight(col) + 'px'
+    style.zIndex = 2
+    style.background = 'var(--vvsk-sticky-bg, #fff)'
+  }
+  return style
+}
+
 function getCellValue(row: T, col: ColumnDef): unknown {
   return (row as Record<string, unknown>)[col.key]
 }
 
-// ── Sticky header ─────────────────────────────────────────────────────────────
+// ── Virtual scroll ────────────────────────────────────────────────────────────
 
-const headerStyle = computed(() => ({
-  position: 'sticky' as const,
-  top: `${props.stickyHeaderOffset}px`,
-  zIndex: 10,
-  background: 'inherit',
-}))
+const itemCountRef = computed(() => props.rows.length)
+
+const { visibleRange, totalHeight, offsetTop, scrollTo, scrollToOffset, measureItem } =
+  useVirtualScroll({
+    itemCount: itemCountRef,
+    estimatedItemSize: props.estimatedItemSize,
+    overscan: props.overscan,
+    getScrollElement: () => scrollContainerRef.value,
+  })
+
+const topOffset = computed(() => offsetTop(visibleRange.value.start))
+
+const bottomSpace = computed(() => {
+  const end = visibleRange.value.end
+  const endOffset = end + 1 < props.rows.length ? offsetTop(end + 1) : totalHeight.value
+  return totalHeight.value - endOffset
+})
+
+const visibleRows = computed(() =>
+  props.rows.slice(visibleRange.value.start, visibleRange.value.end + 1),
+)
+
+// ── Row height measurement ────────────────────────────────────────────────────
+
+let rowRO: ResizeObserver | null = null
+
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return
+  rowRO = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const el = entry.target as HTMLElement
+      const idx = parseInt(el.dataset.vIdx ?? '', 10)
+      if (!isNaN(idx)) {
+        const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+        measureItem(idx, h)
+      }
+    }
+  })
+})
+
+onUnmounted(() => {
+  rowRO?.disconnect()
+  rowRO = null
+  colManager = null
+})
+
+// Track by row key so cleanup works correctly when visibleRange.start shifts
+const rowElMap = new Map<string, Element>()
+const rowObserved = new WeakSet<Element>()
+
+function setRowRef(el: Element | null, rowKey: string, absoluteIdx: number): void {
+  if (!rowRO) return
+  if (el) {
+    // Always update the index attribute so ResizeObserver reads the current value
+    ;(el as HTMLElement).dataset.vIdx = String(absoluteIdx)
+    // Only observe once per element instance — re-observing triggers a spurious callback
+    if (!rowObserved.has(el)) {
+      rowRO.observe(el)
+      rowObserved.add(el)
+    }
+    rowElMap.set(rowKey, el)
+  } else {
+    // rowKey is captured from the v-for closure at render time, so it's always correct
+    const elem = rowElMap.get(rowKey)
+    if (elem) {
+      rowRO.unobserve(elem)
+      rowObserved.delete(elem)
+      rowElMap.delete(rowKey)
+    }
+  }
+}
 
 // ── Scroll ────────────────────────────────────────────────────────────────────
 
@@ -267,6 +334,7 @@ function onScroll(e: Event): void {
   isScrolled.value = el.scrollLeft > 0
   scrollLeft.value = el.scrollLeft
   emit('scroll', e)
+  emit('visible-range-change', { start: visibleRange.value.start, end: visibleRange.value.end })
 
   if (props.onLoadMore && props.hasMore && !props.isLoading) {
     const { scrollTop, scrollHeight, clientHeight } = el
@@ -276,36 +344,16 @@ function onScroll(e: Event): void {
   }
 }
 
-// ── Pinned rows ───────────────────────────────────────────────────────────────
-
-const pinnedTopStyle: Record<string, string> = {
-  position: 'sticky',
-  top: '0',
-  zIndex: '5',
-  background: 'inherit',
-}
-
-const pinnedBottomStyle: Record<string, string> = {
-  position: 'sticky',
-  bottom: '0',
-  zIndex: '5',
-  background: 'inherit',
-}
-
 // ── Expose ────────────────────────────────────────────────────────────────────
 
 defineExpose({
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') =>
-    listRef.value?.scrollTo(index, align),
-  scrollToOffset: (offset: number) => listRef.value?.scrollToOffset(offset),
+  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') => scrollTo(index, align),
+  scrollToOffset: (offset: number) => scrollToOffset(offset),
+  measureItem,
   getSortStack: () => [...sortStack.value],
   clearSort: () => {
     sortStack.value = []
   },
-})
-
-onUnmounted(() => {
-  colManager = null
 })
 </script>
 
@@ -313,158 +361,192 @@ onUnmounted(() => {
   <div
     ref="scrollContainerRef"
     class="vvsk-table"
-    style="overflow: auto; position: relative"
     :class="{ 'vvsk-table--scrolled': isScrolled }"
+    style="overflow: auto; position: relative"
     @scroll="onScroll"
   >
-    <!-- Sticky header -->
-    <div v-if="stickyHeader" :style="headerStyle" class="vvsk-table__header">
-      <div style="display: flex" :style="colsContainerStyle">
-        <div
+    <table class="vvsk-table__table">
+      <!-- Column widths — browser syncs header/body automatically -->
+      <colgroup>
+        <col
           v-for="col in visibleColumns"
           :key="col.key"
-          class="vvsk-table__header-cell"
-          :style="getColStyle(col, true)"
-          :class="{ 'vvsk-table__header-cell--sortable': sortable || multiSort }"
-          @click="handleSortClick(col, $event)"
-        >
-          <slot name="header-cell" :column="col">
-            <span>{{ col.title }}</span>
-            <span v-if="sortable || multiSort" class="vvsk-table__sort-icon">
-              {{ getSortIcon(col.key) }}
-              <sup v-if="getSortOrder(col.key) !== null" class="vvsk-table__sort-order">
-                {{ getSortOrder(col.key) }}
-              </sup>
-            </span>
-          </slot>
+          :style="{ width: getEffectiveWidth(col) + 'px', minWidth: (col.minWidth ?? 40) + 'px' }"
+        />
+      </colgroup>
 
-          <!-- Resize handle -->
-          <div
-            v-if="resizableColumns"
-            class="vvsk-table__resize-handle"
-            @pointerdown="startResize(col, $event)"
-            @pointermove="onResizeMove($event)"
-            @pointerup="stopResize($event)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Pinned top rows -->
-    <div
-      v-if="pinnedTopRows && pinnedTopRows.length > 0"
-      class="vvsk-table__pinned vvsk-table__pinned--top"
-      :style="pinnedTopStyle"
-    >
-      <div
-        v-for="(row, idx) in pinnedTopRows"
-        :key="idx"
-        class="vvsk-table__pinned-row"
-        style="display: flex"
-        :style="colsContainerStyle"
+      <!-- Header + pinned top rows -->
+      <thead
+        v-if="stickyHeader || (pinnedTopRows && pinnedTopRows.length > 0)"
+        class="vvsk-table__thead"
+        :style="{
+          position: stickyHeader ? 'sticky' : 'relative',
+          top: stickyHeaderOffset + 'px',
+          zIndex: 10,
+        }"
       >
-        <slot name="pinned-row" :row="row" :index="idx" :position="'top'">
-          <div
+        <!-- Column headers -->
+        <tr v-if="stickyHeader" class="vvsk-table__header-row">
+          <th
             v-for="col in visibleColumns"
             :key="col.key"
-            class="vvsk-table__cell vvsk-table__cell--pinned"
-            :style="getColStyle(col)"
+            class="vvsk-table__header-cell"
+            :class="{ 'vvsk-table__header-cell--sortable': sortable || multiSort }"
+            :style="getThStyle(col)"
+            @click="handleSortClick(col, $event)"
           >
-            <slot
-              name="pinned-cell"
-              :row="row"
-              :column="col"
-              :value="getCellValue(row, col)"
-              :position="'top'"
-            >
-              {{ getCellValue(row, col) }}
+            <slot name="header-cell" :column="col">
+              <span>{{ col.title }}</span>
+              <span
+                v-if="(sortable || multiSort) && getSortIcon(col.key)"
+                class="vvsk-table__sort-icon"
+              >
+                {{ getSortIcon(col.key) }}
+                <sup v-if="getSortOrder(col.key) !== null" class="vvsk-table__sort-order">
+                  {{ getSortOrder(col.key) }}
+                </sup>
+              </span>
             </slot>
-          </div>
-        </slot>
-      </div>
-    </div>
-
-    <!-- Virtual body -->
-    <VirtualList
-      ref="listRef"
-      :items="rows"
-      :key-field="keyField"
-      :estimated-item-size="estimatedItemSize"
-      :overscan="overscan"
-      :scroll-element="scrollContainerRef"
-      @visible-range-change="$emit('visible-range-change', $event)"
-    >
-      <template #default="{ item, index }">
-        <slot name="row" :row="item as T" :index="index">
-          <div style="display: flex" :style="colsContainerStyle">
             <div
+              v-if="resizableColumns"
+              class="vvsk-table__resize-handle"
+              @pointerdown="startResize(col, $event)"
+              @pointermove="onResizeMove($event)"
+              @pointerup="stopResize($event)"
+            />
+          </th>
+        </tr>
+
+        <!-- Pinned top rows live inside <thead> — sticky for free -->
+        <tr
+          v-for="(row, idx) in pinnedTopRows"
+          :key="`pt-${idx}`"
+          class="vvsk-table__row vvsk-table__row--pinned vvsk-table__row--pinned-top"
+        >
+          <slot name="pinned-row" :row="row" :index="idx" :position="'top'">
+            <td
               v-for="col in visibleColumns"
               :key="col.key"
-              class="vvsk-table__cell"
-              :class="{
-                'vvsk-table__cell--fixed-left': col.fixed === 'left',
-                'vvsk-table__cell--fixed-right': col.fixed === 'right',
-              }"
-              :style="getColStyle(col)"
+              class="vvsk-table__cell vvsk-table__cell--pinned"
+              :style="getTdStyle(col)"
             >
               <slot
-                name="cell"
-                :row="item as T"
+                name="pinned-cell"
+                :row="row"
                 :column="col"
-                :value="getCellValue(item as T, col)"
+                :value="getCellValue(row, col)"
+                :position="'top'"
               >
-                {{ getCellValue(item as T, col) }}
+                {{ getCellValue(row, col) }}
               </slot>
-            </div>
-          </div>
-        </slot>
-      </template>
-    </VirtualList>
+            </td>
+          </slot>
+        </tr>
+      </thead>
 
-    <!-- Load more indicator -->
+      <!-- Body: top spacer → visible rows → bottom spacer -->
+      <tbody>
+        <!-- Always rendered — height 0 when not needed, avoids DOM add/remove near scroll anchor -->
+        <tr class="vvsk-table__spacer" aria-hidden="true">
+          <td :colspan="visibleColumns.length" :style="{ height: topOffset + 'px' }"></td>
+        </tr>
+
+        <template
+          v-for="(row, vIdx) in visibleRows"
+          :key="(row as Record<string, unknown>)[keyField]"
+        >
+          <slot name="row" :row="row" :index="visibleRange.start + vIdx">
+            <tr
+              :ref="
+                (el) =>
+                  setRowRef(
+                    el as Element | null,
+                    String((row as Record<string, unknown>)[keyField]),
+                    visibleRange.start + vIdx,
+                  )
+              "
+              class="vvsk-table__row"
+            >
+              <td
+                v-for="col in visibleColumns"
+                :key="col.key"
+                class="vvsk-table__cell"
+                :style="getTdStyle(col)"
+              >
+                <slot name="cell" :row="row" :column="col" :value="getCellValue(row, col)">
+                  {{ getCellValue(row, col) }}
+                </slot>
+              </td>
+            </tr>
+          </slot>
+        </template>
+
+        <!-- Always rendered — height 0 when not needed -->
+        <tr class="vvsk-table__spacer" aria-hidden="true">
+          <td :colspan="visibleColumns.length" :style="{ height: bottomSpace + 'px' }"></td>
+        </tr>
+      </tbody>
+
+      <!-- Pinned bottom rows live in <tfoot> — sticky to bottom -->
+      <tfoot
+        v-if="pinnedBottomRows && pinnedBottomRows.length > 0"
+        class="vvsk-table__tfoot"
+        style="position: sticky; bottom: 0; z-index: 5"
+      >
+        <tr
+          v-for="(row, idx) in pinnedBottomRows"
+          :key="`pb-${idx}`"
+          class="vvsk-table__row vvsk-table__row--pinned vvsk-table__row--pinned-bottom"
+        >
+          <slot name="pinned-row" :row="row" :index="idx" :position="'bottom'">
+            <td
+              v-for="col in visibleColumns"
+              :key="col.key"
+              class="vvsk-table__cell vvsk-table__cell--pinned"
+              :style="getTdStyle(col)"
+            >
+              <slot
+                name="pinned-cell"
+                :row="row"
+                :column="col"
+                :value="getCellValue(row, col)"
+                :position="'bottom'"
+              >
+                {{ getCellValue(row, col) }}
+              </slot>
+            </td>
+          </slot>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Load more indicator (outside <table>) -->
     <div v-if="isLoading && hasMore" class="vvsk-table__loading">
       <slot name="loading-indicator">
         <div class="vvsk-table__loading-default">Loading…</div>
       </slot>
     </div>
-
-    <!-- Pinned bottom rows -->
-    <div
-      v-if="pinnedBottomRows && pinnedBottomRows.length > 0"
-      class="vvsk-table__pinned vvsk-table__pinned--bottom"
-      :style="pinnedBottomStyle"
-    >
-      <div
-        v-for="(row, idx) in pinnedBottomRows"
-        :key="idx"
-        class="vvsk-table__pinned-row"
-        style="display: flex"
-        :style="colsContainerStyle"
-      >
-        <slot name="pinned-row" :row="row" :index="idx" :position="'bottom'">
-          <div
-            v-for="col in visibleColumns"
-            :key="col.key"
-            class="vvsk-table__cell vvsk-table__cell--pinned"
-            :style="getColStyle(col)"
-          >
-            <slot
-              name="pinned-cell"
-              :row="row"
-              :column="col"
-              :value="getCellValue(row, col)"
-              :position="'bottom'"
-            >
-              {{ getCellValue(row, col) }}
-            </slot>
-          </div>
-        </slot>
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
+/* Prevent browser scroll anchoring from adjusting scrollTop when spacer height changes */
+.vvsk-table {
+  overflow-anchor: none;
+}
+
+.vvsk-table__table {
+  table-layout: fixed;
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+}
+
+.vvsk-table__spacer td {
+  padding: 0;
+  border: none;
+}
+
 .vvsk-table__header-cell--sortable {
   cursor: pointer;
   user-select: none;
@@ -486,6 +568,7 @@ onUnmounted(() => {
 
 .vvsk-table__header-cell {
   position: relative;
+  text-align: left;
 }
 
 .vvsk-table__resize-handle {
@@ -505,6 +588,7 @@ onUnmounted(() => {
 
 .vvsk-table__cell--pinned {
   font-weight: 600;
+  background-color: var(--vvsk-sticky-bg, #fff);
 }
 
 .vvsk-table__loading {
@@ -519,18 +603,9 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
-/* Fixed body cells — must be opaque to cover scrolling siblings */
-.vvsk-table__cell--fixed-left,
-.vvsk-table__cell--fixed-right {
-  background-color: var(--vvsk-sticky-bg, #fff);
-}
-
-/* Shadow on fixed left columns when scrolled */
-.vvsk-table--scrolled .vvsk-table__cell[style*='position: sticky'][style*='left'] {
-  box-shadow: 2px 0 4px rgb(0, 0, 0, 0.15);
-}
-
-.vvsk-table--scrolled .vvsk-table__header-cell[style*='position: sticky'][style*='left'] {
+/* Shadow on left-fixed columns when scrolled horizontally */
+.vvsk-table--scrolled th[style*='position: sticky'][style*='left'],
+.vvsk-table--scrolled td[style*='position: sticky'][style*='left'] {
   box-shadow: 2px 0 4px rgb(0, 0, 0, 0.15);
 }
 </style>

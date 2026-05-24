@@ -3,6 +3,7 @@ export interface ColumnDef {
   title: string
   width?: number
   minWidth?: number
+  maxWidth?: number
   fixed?: 'left' | 'right'
 }
 

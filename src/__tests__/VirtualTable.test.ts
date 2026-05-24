@@ -115,48 +115,49 @@ describe('VirtualTable', () => {
   })
 
   describe('pinned rows', () => {
-    it('renders pinned top rows', async () => {
+    it('renders pinned top rows inside <thead>', async () => {
       const pinnedTop = [{ id: -1, name: 'Pinned Top', value: 999 }]
       const wrapper = mount(VirtualTable, {
         props: { columns, rows: makeRows(3), pinnedTopRows: pinnedTop },
       })
       await nextTick()
 
-      expect(wrapper.find('.vvsk-table__pinned--top').exists()).toBe(true)
-      expect(wrapper.find('.vvsk-table__pinned--top').text()).toContain('Pinned Top')
+      const row = wrapper.find('thead .vvsk-table__row--pinned-top')
+      expect(row.exists()).toBe(true)
+      expect(row.text()).toContain('Pinned Top')
     })
 
-    it('renders pinned bottom rows', async () => {
+    it('renders pinned bottom rows inside <tfoot>', async () => {
       const pinnedBottom = [{ id: -2, name: 'Total', value: 0 }]
       const wrapper = mount(VirtualTable, {
         props: { columns, rows: makeRows(3), pinnedBottomRows: pinnedBottom },
       })
       await nextTick()
 
-      expect(wrapper.find('.vvsk-table__pinned--bottom').exists()).toBe(true)
-      expect(wrapper.find('.vvsk-table__pinned--bottom').text()).toContain('Total')
+      const row = wrapper.find('tfoot .vvsk-table__row--pinned-bottom')
+      expect(row.exists()).toBe(true)
+      expect(row.text()).toContain('Total')
     })
 
-    it('does not render pinned containers when arrays are empty', async () => {
+    it('does not render <tfoot> when pinnedBottomRows is empty', async () => {
       const wrapper = mount(VirtualTable, {
         props: { columns, rows: makeRows(3) },
       })
       await nextTick()
 
-      expect(wrapper.find('.vvsk-table__pinned--top').exists()).toBe(false)
-      expect(wrapper.find('.vvsk-table__pinned--bottom').exists()).toBe(false)
+      expect(wrapper.find('tfoot').exists()).toBe(false)
+      expect(wrapper.find('.vvsk-table__row--pinned-top').exists()).toBe(false)
     })
   })
 
   describe('sort icon', () => {
-    it('shows ↕ by default', async () => {
+    it('shows no sort icon by default (unsorted columns)', async () => {
       const wrapper = mount(VirtualTable, {
         props: { columns, rows: makeRows(3), sortable: true },
       })
       await nextTick()
 
-      const icons = wrapper.findAll('.vvsk-table__sort-icon')
-      expect(icons[0].text()).toContain('↕')
+      expect(wrapper.findAll('.vvsk-table__sort-icon').length).toBe(0)
     })
 
     it('shows ↑ after first click', async () => {
@@ -169,7 +170,23 @@ describe('VirtualTable', () => {
       await nextTick()
 
       const icons = wrapper.findAll('.vvsk-table__sort-icon')
+      expect(icons.length).toBe(1)
       expect(icons[0].text()).toContain('↑')
+    })
+
+    it('hides sort icon after cycling back to null', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), sortable: true },
+      })
+      await nextTick()
+
+      const header = wrapper.findAll('.vvsk-table__header-cell')[0]
+      await header.trigger('click') // asc
+      await header.trigger('click') // desc
+      await header.trigger('click') // null
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__sort-icon').length).toBe(0)
     })
   })
 })
