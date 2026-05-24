@@ -216,13 +216,13 @@ function getColStyle(col: ColumnDef, isHeader = false): Record<string, string> {
   if (col.fixed === 'left') {
     style.position = 'sticky'
     style.left = getFixedLeft(col) + 'px'
-    style.zIndex = isHeader ? '11' : '1'
+    style.zIndex = isHeader ? '11' : '2'
     style.background = 'inherit'
   }
   if (col.fixed === 'right') {
     style.position = 'sticky'
     style.right = getFixedRight(col) + 'px'
-    style.zIndex = isHeader ? '11' : '1'
+    style.zIndex = isHeader ? '11' : '2'
     style.background = 'inherit'
   }
   return style
@@ -401,6 +401,10 @@ onUnmounted(() => {
               v-for="col in visibleColumns"
               :key="col.key"
               class="vvsk-table__cell"
+              :class="{
+                'vvsk-table__cell--fixed-left': col.fixed === 'left',
+                'vvsk-table__cell--fixed-right': col.fixed === 'right',
+              }"
               :style="getColStyle(col)"
             >
               <slot
@@ -513,6 +517,12 @@ onUnmounted(() => {
 .vvsk-table__loading-default {
   font-size: 13px;
   opacity: 0.5;
+}
+
+/* Fixed body cells — must be opaque to cover scrolling siblings */
+.vvsk-table__cell--fixed-left,
+.vvsk-table__cell--fixed-right {
+  background-color: var(--vvsk-sticky-bg, #fff);
 }
 
 /* Shadow on fixed left columns when scrolled */
