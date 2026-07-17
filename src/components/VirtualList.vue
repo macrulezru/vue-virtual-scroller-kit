@@ -1,17 +1,21 @@
 <script setup lang="ts" generic="T">
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { useVirtualScroll } from '../core/useVirtualScroll'
+import { normalizeScrollLeft } from '../utils/normalizeScrollLeft'
 
 const props = withDefaults(
   defineProps<{
     items: T[]
     keyField?: string
+    /** Estimated item size along the scroll axis (height, or width when `horizontal` is set). */
     estimatedItemSize?: number | ((item: T, index: number) => number)
     overscan?: number
     minHeight?: number
+    /** Minimum content width along the scroll axis when `horizontal` is set. */
+    minWidth?: number
     /** External scroll container. Mutually exclusive with pageMode. */
     scrollElement?: HTMLElement | null
-    /** Use window as scroll container (page-mode). */
+    /** Use window as scroll container (page-mode). Not supported together with `horizontal`. */
     pageMode?: boolean
     isLoading?: boolean
     /** Save/restore scroll position across mounts via sessionStorage. */
@@ -23,17 +27,28 @@ const props = withDefaults(
      * item-keyed transitions/animations.
      */
     recyclePool?: boolean
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
+    /**
+     * Virtualize horizontally (scrollLeft/clientWidth) instead of vertically. RTL-safe.
+     * Fixed at mount, like `pageMode` — bind a `:key` to this value if you need to switch
+     * axes at runtime, so the component remounts instead of leaving the old axis wired up.
+     */
+    horizontal?: boolean
   }>(),
   {
     keyField: 'id',
     estimatedItemSize: 50,
     overscan: 3,
     minHeight: 0,
+    minWidth: 0,
     scrollElement: null,
     pageMode: false,
     isLoading: false,
     ssrPreloadCount: 20,
     recyclePool: false,
+    motionBlur: false,
+    horizontal: false,
   },
 )
 
@@ -73,12 +88,15 @@ const {
   scrollToOffset,
   measureItem,
   handleScroll,
+  blurAmount,
 } = useVirtualScroll({
   itemCount: itemCountRef,
-  estimatedItemSize: estimatedSizeArg.value,
+  estimatedItemSize: estimatedSizeArg,
   overscan: props.overscan,
   getScrollElement: getScrollEl,
   pageMode: props.pageMode,
+  horizontal: props.horizontal,
+  motionBlur: computed(() => props.motionBlur),
 })
 
 // When an external scrollElement is provided it may be null on first render
@@ -106,53 +124,55 @@ watch(
   { flush: 'post' },
 )
 
-defineExpose({ scrollTo, scrollToOffset, measureItem })
+defineExpose({ scrollTo, scrollToOffset, measureItem, getScrollElement: getScrollEl })
 
 watch(visibleRange, (range) => emit('visible-range-change', range))
-
-// Re-build position manager when estimatedItemSize function changes
-watch(
-  () => props.estimatedItemSize,
-  () => {
-    // Force range recalc; actual manager rebuild happens via itemCount watch
-  },
-)
 
 // SSR: first N rows with estimated heights
 const ssrCount = computed(() =>
   isSSR ? Math.min(props.items.length, props.ssrPreloadCount) : props.items.length,
 )
 
+function rowStyle(offset: number): Record<string, string> {
+  return props.horizontal
+    ? { position: 'absolute', insetInlineStart: `${offset}px`, height: '100%' }
+    : { position: 'absolute', top: `${offset}px`, width: '100%' }
+}
+
 const visibleItems = computed(() => {
   if (isSSR) {
     return props.items.slice(0, ssrCount.value).map((item, index) => {
       const es = props.estimatedItemSize
       const h = typeof es === 'function' ? es(item, index) : (es ?? 50)
-      return {
-        item,
-        index,
-        style: { position: 'absolute' as const, top: `${index * h}px`, width: '100%' },
-      }
+      return { item, index, style: rowStyle(index * h) }
     })
   }
 
   const { start, end } = visibleRange.value
   const result = []
   for (let i = start; i <= end && i < props.items.length; i++) {
-    result.push({
-      item: props.items[i],
-      index: i,
-      style: { position: 'absolute' as const, top: `${offsetTop(i)}px`, width: '100%' },
-    })
+    result.push({ item: props.items[i], index: i, style: rowStyle(offsetTop(i)) })
   }
   return result
 })
 
-const containerStyle = computed(() => ({
-  position: 'relative' as const,
-  height: `${Math.max(totalHeight.value, props.minHeight)}px`,
-  width: '100%',
-}))
+const containerStyle = computed(() =>
+  props.horizontal
+    ? {
+        position: 'relative' as const,
+        width: `${Math.max(totalHeight.value, props.minWidth)}px`,
+        height: '100%',
+        filter: blurAmount.value > 0 ? `blur(${blurAmount.value}px)` : undefined,
+        transition: props.motionBlur ? 'filter 150ms ease-out' : undefined,
+      }
+    : {
+        position: 'relative' as const,
+        height: `${Math.max(totalHeight.value, props.minHeight)}px`,
+        width: '100%',
+        filter: blurAmount.value > 0 ? `blur(${blurAmount.value}px)` : undefined,
+        transition: props.motionBlur ? 'filter 150ms ease-out' : undefined,
+      },
+)
 
 // ResizeObserver — single instance for all visible rows
 let resizeObserver: ResizeObserver | null = null
@@ -171,8 +191,8 @@ function setupResizeObserver(): void {
       const el = entry.target as HTMLElement
       const indexStr = el.dataset['virtualIndex']
       if (indexStr == null) continue
-      const height = entry.contentRect.height
-      if (height > 0) measureItem(parseInt(indexStr, 10), height)
+      const size = props.horizontal ? entry.contentRect.width : entry.contentRect.height
+      if (size > 0) measureItem(parseInt(indexStr, 10), size)
     }
   })
 }
@@ -207,7 +227,13 @@ const RESTORE_PREFIX = 'vvsk:restore:'
 function saveScroll(): void {
   if (!props.restoreKey || isSSR) return
   const el = props.pageMode ? null : getScrollEl()
-  const pos = el ? el.scrollTop : props.pageMode ? window.scrollY : 0
+  const pos = el
+    ? props.horizontal
+      ? normalizeScrollLeft(el)
+      : el.scrollTop
+    : props.pageMode
+      ? window.scrollY
+      : 0
   try {
     sessionStorage.setItem(RESTORE_PREFIX + props.restoreKey, String(pos))
   } catch {
@@ -260,7 +286,9 @@ function getItemKey(item: T, index: number): string | number {
     :style="
       pageMode || scrollElement
         ? { position: 'relative' }
-        : { overflowY: 'auto', position: 'relative' }
+        : horizontal
+          ? { overflowX: 'auto', position: 'relative' }
+          : { overflowY: 'auto', position: 'relative' }
     "
     role="list"
     :aria-rowcount="items.length"

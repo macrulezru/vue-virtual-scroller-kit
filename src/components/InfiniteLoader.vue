@@ -1,7 +1,7 @@
 <script setup lang="ts" generic="T">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import VirtualList from './VirtualList.vue'
-import type { VirtualListExpose } from '../types'
+import type { ScrollBehaviorOptions, VirtualListExpose } from '../types'
 
 const props = withDefaults(
   defineProps<{
@@ -14,6 +14,8 @@ const props = withDefaults(
     keyField?: string
     estimatedItemSize?: number
     overscan?: number
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
   }>(),
   {
     threshold: 200,
@@ -21,6 +23,7 @@ const props = withDefaults(
     keyField: 'id',
     estimatedItemSize: 50,
     overscan: 3,
+    motionBlur: false,
   },
 )
 
@@ -107,9 +110,14 @@ watch(
 )
 
 defineExpose({
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') =>
-    listRef.value?.scrollTo(index, align),
-  scrollToOffset: (offset: number) => listRef.value?.scrollToOffset(offset),
+  scrollTo: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    options?: ScrollBehaviorOptions,
+  ) => listRef.value?.scrollTo(index, align, options),
+  scrollToOffset: (offset: number, options?: ScrollBehaviorOptions) =>
+    listRef.value?.scrollToOffset(offset, options),
+  getScrollElement: () => listRef.value?.getScrollElement() ?? null,
 })
 </script>
 
@@ -138,6 +146,7 @@ defineExpose({
       :overscan="overscan"
       :is-loading="isLoading"
       :scroll-element="containerRef"
+      :motion-blur="motionBlur"
       @visible-range-change="$emit('visible-range-change', $event)"
     >
       <template #default="slotProps">

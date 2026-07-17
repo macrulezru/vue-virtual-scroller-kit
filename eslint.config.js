@@ -36,7 +36,7 @@ export default tseslint.config(
 
   // Test files
   {
-    files: ['src/__tests__/**/*.ts'],
+    files: ['src/__tests__/**/*.ts', 'src/__bench__/**/*.ts'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },

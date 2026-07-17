@@ -19,7 +19,10 @@ const photos = Array.from({ length: 2000 }, (_, i) => ({
   id: i,
   color: COLORS[i % COLORS.length],
   label: `Image #${i + 1}`,
-  aspect: 1 + (i % 3) * 0.3,
+  // Sparse and scattered (not aligned to any small column count) so most rows stay
+  // short and only occasionally contain a tall item — a clearer dynamic-height demo
+  // than "every row hits the tallest aspect" would be.
+  aspect: (i * 37) % 11 === 0 ? 1.8 : 1,
 }))
 
 const columnCount = ref(0) // 0 = auto
@@ -27,6 +30,7 @@ const cellWidth = ref(180)
 const cellHeight = ref(160)
 const gap = ref(12)
 const isLoading = ref(false)
+const dynamicRowHeight = ref(false)
 const gridRef = ref()
 
 function toggleLoading() {
@@ -75,6 +79,11 @@ const displayedPhotos = computed(() => isLoading.value ? [] : photos)
         <button class="demo-btn" @click="gridRef?.scrollTo(500)">Jump to #500</button>
       </div>
 
+      <label class="demo-checkbox">
+        <input v-model="dynamicRowHeight" type="checkbox" />
+        Dynamic row height (measured per row)
+      </label>
+
       <div class="demo-info">
         <strong>{{ photos.length.toLocaleString() }}</strong> items total
       </div>
@@ -89,12 +98,16 @@ const displayedPhotos = computed(() => isLoading.value ? [] : photos)
         :row-height="cellHeight"
         :gap="gap"
         :is-loading="isLoading"
+        :dynamic-row-height="dynamicRowHeight"
         style="height: 100%; border: 1px solid var(--color-border); border-radius: 8px"
       >
         <template #default="{ item, index }">
           <div
             class="grid-cell"
-            :style="{ background: (item as Photo).color }"
+            :style="{
+              background: (item as Photo).color,
+              height: dynamicRowHeight ? `${cellHeight * (item as Photo).aspect}px` : '100%',
+            }"
           >
             <span class="grid-cell__label">{{ (item as Photo).label }}</span>
             <span class="grid-cell__index">#{{ index }}</span>
@@ -159,6 +172,15 @@ const displayedPhotos = computed(() => isLoading.value ? [] : photos)
 
 .demo-label input[type='range'] { width: 100%; }
 .demo-label span { font-size: 11px; font-weight: 600; color: var(--color-primary); }
+
+.demo-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
 
 .demo-info {
   font-size: 12px;

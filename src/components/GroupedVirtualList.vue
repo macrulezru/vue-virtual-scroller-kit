@@ -1,7 +1,9 @@
 <script setup lang="ts" generic="T">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import VirtualList from './VirtualList.vue'
-import type { GroupDef, VirtualListExpose, VirtualRow } from '../types'
+import type { GroupDef, ScrollBehaviorOptions, VirtualListExpose, VirtualRow } from '../types'
+
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{
@@ -10,21 +12,37 @@ const props = withDefaults(
     estimatedGroupHeaderSize?: number
     overscan?: number
     keyField?: string
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
+    /**
+     * Keep the current group's header pinned to the top while its items scroll underneath.
+     * Renders as an overlay above the list (not a real sticky row, which can't work with
+     * virtualized/absolutely-positioned rows) using the same #group-header slot. Off by default.
+     */
+    stickyGroupHeaders?: boolean
   }>(),
   {
     estimatedItemSize: 50,
     estimatedGroupHeaderSize: 40,
     overscan: 3,
     keyField: 'id',
+    motionBlur: false,
+    stickyGroupHeaders: false,
   },
 )
 
-defineEmits<{
+const emit = defineEmits<{
   'visible-range-change': [range: { start: number; end: number }]
   scroll: [event: Event]
 }>()
 
 const listRef = ref<VirtualListExpose | null>(null)
+const visibleStart = ref(0)
+
+function onVisibleRangeChange(range: { start: number; end: number }): void {
+  visibleStart.value = range.start
+  emit('visible-range-change', range)
+}
 
 const ANIM_MS = 220
 
@@ -67,6 +85,12 @@ const flatRows = computed<VirtualRow<T>[]>(() => {
     }
   }
   return rows
+})
+
+const currentGroup = computed<GroupDef<T> | undefined>(() => {
+  if (!props.stickyGroupHeaders) return undefined
+  const groupKey = flatRows.value[visibleStart.value]?.groupKey
+  return groupKey ? props.groups.find((g) => g.key === groupKey) : undefined
 })
 
 function toggle(groupKey: string): void {
@@ -187,60 +211,94 @@ function rowAnimClass(row: unknown): string {
 
 defineExpose({
   toggle,
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') =>
-    listRef.value?.scrollTo(index, align),
+  scrollTo: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    options?: ScrollBehaviorOptions,
+  ) => listRef.value?.scrollTo(index, align, options),
+  getScrollElement: () => listRef.value?.getScrollElement() ?? null,
 })
 </script>
 
 <template>
-  <VirtualList
-    ref="listRef"
-    :items="flatRows"
-    key-field="_key"
-    :estimated-item-size="estimatedItemSize"
-    :overscan="overscan"
-    @visible-range-change="$emit('visible-range-change', $event)"
-    @scroll="$emit('scroll', $event)"
-  >
-    <template #default="{ item: row, index }">
-      <div
-        :key="getRowKey(asRow(row), index)"
-        class="vvsk-grouped-row"
-        :class="[rowCssClass(row), rowAnimClass(row)]"
+  <div class="vvsk-grouped-list-wrapper" style="position: relative; height: 100%">
+    <div v-if="currentGroup" class="vvsk-grouped-sticky-header">
+      <slot
+        name="group-header"
+        :group="currentGroup"
+        :toggle="() => toggle(currentGroup!.key)"
+        :is-collapsed="isCollapsed(currentGroup!.key)"
       >
-        <!-- Group header -->
-        <template v-if="isHeaderRow(row)">
-          <slot
-            name="group-header"
-            :group="rowGroup(row)"
-            :toggle="() => toggle(rowGroupKey(row))"
-            :is-collapsed="isCollapsed(rowGroupKey(row))"
-          >
-            <div
-              class="vvsk-grouped-header-default"
-              style="cursor: pointer; padding: 8px; font-weight: bold"
-              @click="toggle(rowGroupKey(row))"
+        <div
+          class="vvsk-grouped-header-default"
+          style="cursor: pointer; padding: 8px; font-weight: bold"
+          @click="toggle(currentGroup!.key)"
+        >
+          <span>{{ isCollapsed(currentGroup!.key) ? '▶' : '▼' }}</span>
+          {{ currentGroup!.label }}
+        </div>
+      </slot>
+    </div>
+
+    <VirtualList
+      v-bind="$attrs"
+      ref="listRef"
+      :items="flatRows"
+      key-field="_key"
+      :estimated-item-size="estimatedItemSize"
+      :overscan="overscan"
+      :motion-blur="motionBlur"
+      @visible-range-change="onVisibleRangeChange"
+      @scroll="$emit('scroll', $event)"
+    >
+      <template #default="{ item: row, index }">
+        <div
+          :key="getRowKey(asRow(row), index)"
+          class="vvsk-grouped-row"
+          :class="[rowCssClass(row), rowAnimClass(row)]"
+        >
+          <!-- Group header -->
+          <template v-if="isHeaderRow(row)">
+            <slot
+              name="group-header"
+              :group="rowGroup(row)"
+              :toggle="() => toggle(rowGroupKey(row))"
+              :is-collapsed="isCollapsed(rowGroupKey(row))"
             >
-              <span>{{ chevron(row) }}</span>
-              {{ rowGroupLabel(row) }}
-            </div>
-          </slot>
-        </template>
+              <div
+                class="vvsk-grouped-header-default"
+                style="cursor: pointer; padding: 8px; font-weight: bold"
+                @click="toggle(rowGroupKey(row))"
+              >
+                <span>{{ chevron(row) }}</span>
+                {{ rowGroupLabel(row) }}
+              </div>
+            </slot>
+          </template>
 
-        <!-- Item -->
-        <template v-else>
-          <slot :item="rowItem(row)" :index="index" :group-key="rowGroupKey(row)" />
-        </template>
-      </div>
-    </template>
+          <!-- Item -->
+          <template v-else>
+            <slot :item="rowItem(row)" :index="index" :group-key="rowGroupKey(row)" />
+          </template>
+        </div>
+      </template>
 
-    <template #empty>
-      <slot name="empty" />
-    </template>
-  </VirtualList>
+      <template #empty>
+        <slot name="empty" />
+      </template>
+    </VirtualList>
+  </div>
 </template>
 
 <style scoped>
+.vvsk-grouped-sticky-header {
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  z-index: 5;
+  background: var(--vvsk-sticky-bg, #fff);
+}
+
 @keyframes vvsk-collapse-out {
   from {
     opacity: 1;

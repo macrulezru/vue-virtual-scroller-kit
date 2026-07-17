@@ -1,6 +1,7 @@
 <script setup lang="ts" generic="T">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useVirtualScroll } from '../core/useVirtualScroll'
+import type { ScrollBehaviorOptions } from '../types'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +17,14 @@ const props = withDefaults(
     keyField?: string
     overscan?: number
     isLoading?: boolean
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
+    /**
+     * Measure each row's actual height via ResizeObserver instead of using a fixed
+     * `rowHeight`. `rowHeight` becomes the initial estimate. Off by default (zero cost
+     * when disabled — cells stay individually absolutely-positioned as before).
+     */
+    dynamicRowHeight?: boolean
   }>(),
   {
     columns: 0,
@@ -25,6 +34,8 @@ const props = withDefaults(
     keyField: 'id',
     overscan: 2,
     isLoading: false,
+    motionBlur: false,
+    dynamicRowHeight: false,
   },
 )
 
@@ -56,11 +67,14 @@ const {
   totalHeight,
   offsetTop,
   scrollTo: scrollToRow,
+  blurAmount,
+  measureItem,
 } = useVirtualScroll({
   itemCount: itemCountRef,
   estimatedItemSize: rowHeightWithGap,
   overscan: props.overscan,
   getScrollElement: () => containerRef.value,
+  motionBlur: computed(() => props.motionBlur),
 })
 
 watch(visibleRange, (range) => emit('visible-range-change', range))
@@ -87,6 +101,8 @@ const containerStyle = computed(() => ({
   position: 'relative' as const,
   height: `${totalHeight.value + props.gap}px`,
   width: '100%',
+  filter: blurAmount.value > 0 ? `blur(${blurAmount.value}px)` : undefined,
+  transition: props.motionBlur ? 'filter 150ms ease-out' : undefined,
 }))
 
 function getItemKey(item: T, index: number): string | number {
@@ -102,9 +118,49 @@ function cellStyle(colIndex: number, top: number): Record<string, string> {
   return {
     position: 'absolute',
     top: `${top + props.gap}px`,
-    left: `${colIndex * (props.columnWidth + props.gap) + props.gap}px`,
+    insetInlineStart: `${colIndex * (props.columnWidth + props.gap) + props.gap}px`,
     width: colWidth,
     height: `${props.rowHeight}px`,
+  }
+}
+
+// ── dynamicRowHeight: row-wrapper layout (flex, natural height) ─────────────────
+
+function rowWrapperStyle(top: number): Record<string, string> {
+  return {
+    position: 'absolute',
+    top: `${top + props.gap}px`,
+    insetInlineStart: `${props.gap}px`,
+    insetInlineEnd: `${props.gap}px`,
+    display: 'flex',
+    gap: `${props.gap}px`,
+  }
+}
+
+function dynamicCellStyle(): Record<string, string> {
+  const colWidth =
+    props.columns > 0
+      ? `${Math.floor((containerWidth.value - (colCount.value - 1) * props.gap) / colCount.value)}px`
+      : `${props.columnWidth}px`
+  return { width: colWidth, flexShrink: '0' }
+}
+
+let rowResizeObserver: ResizeObserver | null = null
+const rowElements = new Map<number, Element>()
+
+function observeRow(el: Element, rowIndex: number): void {
+  if (!rowResizeObserver) return
+  const existing = rowElements.get(rowIndex)
+  if (existing && existing !== el) rowResizeObserver.unobserve(existing)
+  rowElements.set(rowIndex, el)
+  rowResizeObserver.observe(el)
+}
+
+function unobserveRow(rowIndex: number): void {
+  const el = rowElements.get(rowIndex)
+  if (el) {
+    rowResizeObserver?.unobserve(el)
+    rowElements.delete(rowIndex)
   }
 }
 
@@ -120,18 +176,32 @@ onMounted(() => {
     containerWidth.value = containerRef.value.clientWidth
   }
   containerRef.value?.addEventListener('scroll', (e) => emit('scroll', e), { passive: true })
+
+  if (props.dynamicRowHeight && typeof ResizeObserver !== 'undefined') {
+    rowResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const el = entry.target as HTMLElement
+        const idxStr = el.dataset['virtualRowIndex']
+        if (idxStr == null) continue
+        const height = entry.contentRect.height
+        if (height > 0) measureItem(parseInt(idxStr, 10), height)
+      }
+    })
+  }
 })
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  rowResizeObserver?.disconnect()
+  rowElements.clear()
 })
 
-function scrollTo(index: number): void {
+function scrollTo(index: number, options?: ScrollBehaviorOptions): void {
   const row = Math.floor(index / colCount.value)
-  scrollToRow(row, 'start')
+  scrollToRow(row, 'start', options)
 }
 
-defineExpose({ scrollTo })
+defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
 </script>
 
 <template>
@@ -156,24 +226,54 @@ defineExpose({ scrollTo })
     </slot>
 
     <template v-else>
-      <div :style="containerStyle">
-        <template v-for="{ rowIndex, cells, top } in visibleRows" :key="rowIndex">
+      <div class="vvsk-grid__content" :style="containerStyle">
+        <template v-if="dynamicRowHeight">
           <div
-            v-for="(cell, colIndex) in cells"
-            :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
-            :style="cellStyle(colIndex, top)"
-            :role="cell ? 'gridcell' : undefined"
-            :aria-rowindex="cell ? Math.floor(cell.index / colCount) + 1 : undefined"
-            :aria-colindex="cell ? (cell.index % colCount) + 1 : undefined"
+            v-for="{ rowIndex, cells, top } in visibleRows"
+            :key="rowIndex"
+            :ref="(el) => el && observeRow(el as Element, rowIndex)"
+            :data-virtual-row-index="rowIndex"
+            :style="rowWrapperStyle(top)"
+            @vue:unmounted="unobserveRow(rowIndex)"
           >
-            <slot
-              v-if="cell"
-              :item="cell.item"
-              :index="cell.index"
-              :row="rowIndex"
-              :col="colIndex"
-            />
+            <div
+              v-for="(cell, colIndex) in cells"
+              :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
+              :style="dynamicCellStyle()"
+              :role="cell ? 'gridcell' : undefined"
+              :aria-rowindex="cell ? Math.floor(cell.index / colCount) + 1 : undefined"
+              :aria-colindex="cell ? (cell.index % colCount) + 1 : undefined"
+            >
+              <slot
+                v-if="cell"
+                :item="cell.item"
+                :index="cell.index"
+                :row="rowIndex"
+                :col="colIndex"
+              />
+            </div>
           </div>
+        </template>
+
+        <template v-else>
+          <template v-for="{ rowIndex, cells, top } in visibleRows" :key="rowIndex">
+            <div
+              v-for="(cell, colIndex) in cells"
+              :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
+              :style="cellStyle(colIndex, top)"
+              :role="cell ? 'gridcell' : undefined"
+              :aria-rowindex="cell ? Math.floor(cell.index / colCount) + 1 : undefined"
+              :aria-colindex="cell ? (cell.index % colCount) + 1 : undefined"
+            >
+              <slot
+                v-if="cell"
+                :item="cell.item"
+                :index="cell.index"
+                :row="rowIndex"
+                :col="colIndex"
+              />
+            </div>
+          </template>
         </template>
       </div>
 

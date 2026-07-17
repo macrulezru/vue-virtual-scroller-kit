@@ -189,4 +189,183 @@ describe('VirtualTable', () => {
       expect(wrapper.findAll('.vvsk-table__sort-icon').length).toBe(0)
     })
   })
+
+  describe('column reordering', () => {
+    // .trigger() can't set clientX/clientY on synthesized events in jsdom (getter-only on
+    // MouseEvent.prototype), so dispatch real PointerEvents directly — same pattern as
+    // useDraggableList.test.ts and VirtualScrollbar.test.ts use for pointer interactions.
+    function pointerEvent(type: string, x: number, y: number): PointerEvent {
+      return new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1 })
+    }
+
+    it('emits column-reorder and swaps rendered column order after a threshold-crossing drag', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), reorderableColumns: true },
+      })
+      await nextTick()
+
+      const headers = wrapper.findAll('.vvsk-table__header-cell')
+      expect(headers.map((h) => h.text())).toEqual(['Name', 'Value'])
+
+      // Mock hit-testing so the drag "lands" on the Value header.
+      const valueTh = headers[1].element as HTMLElement
+      vi.spyOn(document, 'elementsFromPoint').mockReturnValue([valueTh])
+
+      headers[0].element.dispatchEvent(pointerEvent('pointerdown', 0, 0))
+      window.dispatchEvent(pointerEvent('pointermove', 20, 0))
+      window.dispatchEvent(pointerEvent('pointerup', 20, 0))
+      await nextTick()
+
+      const emitted = wrapper.emitted('column-reorder')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0][0]).toEqual(['value', 'name'])
+
+      const headersAfter = wrapper.findAll('.vvsk-table__header-cell')
+      expect(headersAfter.map((h) => h.text())).toEqual(['Value', 'Name'])
+    })
+
+    it('suppresses the sort click after a threshold-crossing drag', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), reorderableColumns: true, sortable: true },
+      })
+      await nextTick()
+
+      const headers = wrapper.findAll('.vvsk-table__header-cell')
+      const valueTh = headers[1].element as HTMLElement
+      vi.spyOn(document, 'elementsFromPoint').mockReturnValue([valueTh])
+
+      headers[0].element.dispatchEvent(pointerEvent('pointerdown', 0, 0))
+      window.dispatchEvent(pointerEvent('pointermove', 20, 0))
+      window.dispatchEvent(pointerEvent('pointerup', 20, 0))
+      // Real browsers still synthesize a click after pointerup on the original target —
+      // the drag suppresses its *sort* side effect via a one-shot flag, not preventDefault.
+      await headers[0].trigger('click')
+      await nextTick()
+
+      expect(wrapper.emitted('sort-change')).toBeFalsy()
+    })
+
+    it('still sorts on a plain click when the pointer never crosses the drag threshold', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), reorderableColumns: true, sortable: true },
+      })
+      await nextTick()
+
+      const headers = wrapper.findAll('.vvsk-table__header-cell')
+      headers[0].element.dispatchEvent(pointerEvent('pointerdown', 0, 0))
+      window.dispatchEvent(pointerEvent('pointerup', 0, 0))
+      await headers[0].trigger('click')
+      await nextTick()
+
+      expect(wrapper.emitted('sort-change')).toBeTruthy()
+      expect(wrapper.emitted('column-reorder')).toBeFalsy()
+    })
+
+    it('does not reorder when reorderableColumns is off (default)', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3) },
+      })
+      await nextTick()
+
+      const headers = wrapper.findAll('.vvsk-table__header-cell')
+      const valueTh = headers[1].element as HTMLElement
+      vi.spyOn(document, 'elementsFromPoint').mockReturnValue([valueTh])
+
+      headers[0].element.dispatchEvent(pointerEvent('pointerdown', 0, 0))
+      window.dispatchEvent(pointerEvent('pointermove', 20, 0))
+      window.dispatchEvent(pointerEvent('pointerup', 20, 0))
+      await nextTick()
+
+      expect(wrapper.emitted('column-reorder')).toBeFalsy()
+      expect(wrapper.findAll('.vvsk-table__header-cell').map((h) => h.text())).toEqual([
+        'Name',
+        'Value',
+      ])
+    })
+  })
+
+  describe('column visibility', () => {
+    type Exposed = {
+      toggleColumnVisible: (key: string) => void
+      setColumnVisible: (key: string, visible: boolean) => void
+      getHiddenColumns: () => string[]
+    }
+
+    it('hides a column from the header/body and reports it via getHiddenColumns', async () => {
+      const wrapper = mount(VirtualTable, { props: { columns, rows: makeRows(3) } })
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__header-cell').map((h) => h.text())).toEqual([
+        'Name',
+        'Value',
+      ])
+      ;(wrapper.vm as unknown as Exposed).toggleColumnVisible('value')
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__header-cell').map((h) => h.text())).toEqual(['Name'])
+      expect((wrapper.vm as unknown as Exposed).getHiddenColumns()).toEqual(['value'])
+    })
+
+    it('toggling back makes the column reappear', async () => {
+      const wrapper = mount(VirtualTable, { props: { columns, rows: makeRows(3) } })
+      await nextTick()
+      const vm = wrapper.vm as unknown as Exposed
+
+      vm.toggleColumnVisible('value')
+      await nextTick()
+      vm.toggleColumnVisible('value')
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__header-cell').map((h) => h.text())).toEqual([
+        'Name',
+        'Value',
+      ])
+      expect(vm.getHiddenColumns()).toEqual([])
+    })
+
+    it('emits column-visibility-change with the key and new visibility', async () => {
+      const wrapper = mount(VirtualTable, { props: { columns, rows: makeRows(3) } })
+      await nextTick()
+      const vm = wrapper.vm as unknown as Exposed
+
+      vm.setColumnVisible('value', false)
+      await nextTick()
+
+      const emitted = wrapper.emitted('column-visibility-change')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0][0]).toEqual({ key: 'value', visible: false })
+    })
+
+    it('does not re-emit when setting a column to its current visibility', async () => {
+      const wrapper = mount(VirtualTable, { props: { columns, rows: makeRows(3) } })
+      await nextTick()
+      const vm = wrapper.vm as unknown as Exposed
+
+      vm.setColumnVisible('value', true) // already visible — no-op
+      await nextTick()
+
+      expect(wrapper.emitted('column-visibility-change')).toBeFalsy()
+    })
+
+    it('a hidden fixed column drops out of the sticky-offset calculation for the next one', async () => {
+      const fixedCols = [
+        { key: 'a', title: 'A', width: 50, fixed: 'left' as const },
+        { key: 'b', title: 'B', width: 60, fixed: 'left' as const },
+        { key: 'c', title: 'C', width: 100 },
+      ]
+      const wrapper = mount(VirtualTable, { props: { columns: fixedCols, rows: makeRows(2) } })
+      await nextTick()
+      const vm = wrapper.vm as unknown as Exposed
+
+      const styleBefore = wrapper.findAll('.vvsk-table__header-cell')[1].attributes('style')
+      expect(styleBefore).toContain('50px') // column "b" starts after "a" (50px wide)
+
+      vm.toggleColumnVisible('a')
+      await nextTick()
+
+      // "b" is now the first fixed column — its sticky offset should reset to 0.
+      const styleAfter = wrapper.findAll('.vvsk-table__header-cell')[0].attributes('style')
+      expect(styleAfter).toContain('0px')
+    })
+  })
 })

@@ -45,3 +45,9 @@ desktop.ini
 
 # Vitest
 .vitest-results/
+
+# Playwright
+demo/test-results/
+demo/playwright-report/
+demo/blob-report/
+demo/playwright/.cache/

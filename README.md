@@ -9,7 +9,9 @@
   />
 </div>
 
-Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measured by `ResizeObserver`, grouping with animated expand/collapse, sticky headers, infinite scroll, keyboard navigation, drag-to-reorder, and full SSR support — all with a single peer dependency (Vue 3).
+Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measured by `ResizeObserver`, grouping with animated expand/collapse, sticky headers, infinite scroll, keyboard navigation, drag-to-reorder, RTL support, and full SSR support — all with a single peer dependency (Vue 3).
+
+[![CI](https://github.com/macrulezru/vue-virtual-scroller-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/macrulezru/vue-virtual-scroller-kit/actions/workflows/ci.yml)
 
 ---
 
@@ -26,32 +28,45 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 - [VirtualTree](#virtualtree)
 - [InfiniteLoader](#infiniteloader)
 - [VirtualSelect](#virtualselect)
+- [VirtualScrollbar](#virtualscrollbar)
 - [useVirtualScroll](#usevirtualscroll)
 - [useVirtualKeyboardNav](#usevirtualkeyboardnav)
 - [useDraggableList](#usedraggablelist)
+- [useRowSelection](#userowselection)
+- [useVisibilityTracker](#usevisibilitytracker)
 - [PositionManager](#positionmanager)
 - [autoColWidths](#autocolwidths)
 - [TypeScript types](#typescript-types)
 - [Accessibility](#accessibility)
 - [SSR compatibility](#ssr-compatibility)
+- [RTL support](#rtl-support)
 - [Architecture](#architecture)
+- [Performance](#performance)
 - [Bundle size & peer dependencies](#bundle-size--peer-dependencies)
+- [Development](#development)
 
 ---
 
 ## Features
 
 - **Dynamic row heights** — `ResizeObserver` measures each row after render; position manager updates in O(log n)
-- **VirtualList** — flat list, external scroll container, page-mode (window scroll), DOM recycling pool, scroll restoration
-- **GroupedVirtualList** — collapsible sections with smooth expand/collapse CSS animation
-- **VirtualTable** — native `<table>` with spacer-row virtual scroll, sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize columns, column virtualization, pinned top/bottom rows (`<thead>`/`<tfoot>`), built-in lazy loading (`onLoadMore` / `hasMore` / `isLoading`)
-- **VirtualGrid** — fixed-height cells in a responsive auto-column or fixed-column grid
+- **VirtualList** — flat list, external scroll container, page-mode (window scroll), DOM recycling pool, scroll restoration, opt-in `horizontal` layout
+- **GroupedVirtualList** — collapsible sections with smooth expand/collapse CSS animation, opt-in sticky group-header overlay
+- **VirtualTable** — native `<table>` with spacer-row virtual scroll, sticky header, fixed left/right columns, single and multi-column sort, drag-to-resize *and* drag-to-reorder columns, column show/hide, column virtualization, pinned top/bottom rows (`<thead>`/`<tfoot>`), built-in lazy loading (`onLoadMore` / `hasMore` / `isLoading`)
+- **VirtualGrid** — fixed-height cells in a responsive auto-column or fixed-column grid, or opt-in per-row dynamic height
 - **VirtualTree** — hierarchical expand/collapse with lazy child loading, configurable indent
 - **InfiniteLoader** — trigger `onLoadMore` near the bottom, top, or both ends; scroll-position preservation when prepending
-- **VirtualSelect** — virtualized dropdown with client-side search and keyboard navigation
-- **useVirtualScroll** — raw composable for custom containers; returns `visibleRange`, `totalHeight`, `scrollTo`
+- **VirtualSelect** — virtualized dropdown with client-side or async/remote search (debounced, with a loading slot) and keyboard navigation
+- **VirtualScrollbar** — themable custom scrollbar overlay that syncs with any of the components above (or any scrollable element)
+- **Smooth programmatic scrolling** — `scrollTo`/`scrollToOffset` accept `{ behavior: 'smooth' }`, using the browser's native smooth-scroll
+- **Motion blur** — opt-in `motionBlur` prop applies a velocity-scaled CSS blur while scrolling fast, clearing once scrolling settles
+- **Anchor-compensated reflow** — when a row above the viewport is measured to a different height, scroll position is adjusted by the same delta so visible content never jumps
+- **RTL support** — CSS logical properties throughout, plus `scrollLeft` normalization for column virtualization, horizontal `VirtualList`, and the scrollbar; wrap your app in `dir="rtl"`, nothing else required
+- **useVirtualScroll** — raw composable for custom containers; returns `visibleRange`, `totalHeight`, `scrollTo`; supports a `horizontal` axis
 - **useVirtualKeyboardNav** — arrow keys, Home/End, PageUp/PageDown, Enter/Space; plugs into any virtual list
 - **useDraggableList** — pointer-event drag-to-reorder with animated gap, ghost element, auto-scroll, disabled-item support
+- **useRowSelection** — dataset-agnostic click/Shift-click row selection (single or multi), pairs with `VirtualList` or `VirtualTable`
+- **useVisibilityTracker** — per-key enter/leave-viewport events backed by a real `IntersectionObserver`, for highlighting a nav/minimap item while its row is on screen
 - **PositionManager** — segment tree (O(log n) updates and prefix-sum queries) exposed for advanced use
 - **autoColWidths** — estimates column widths from a data sample via Canvas `measureText`; SSR-safe fallback
 - **SSR-safe** — first N rows rendered on the server, hydration without layout shift
@@ -71,13 +86,13 @@ Opens at **http://localhost:5174**:
 
 | Page | What it shows |
 |---|---|
-| **VirtualList** | Flat list, 10 000 items, mixed row heights |
+| **VirtualList** | Flat list, 10 000 items, mixed row heights, vertical/horizontal layout toggle, "Watchlist" (`useVisibilityTracker`) |
 | **GroupedVirtualList** | Collapsible groups, expand/collapse all |
-| **VirtualTable** | Sortable, resizable, fixed columns, pinned rows |
+| **VirtualTable** | Sortable, resizable, fixed columns, pinned rows, column show/hide, checkbox row selection |
 | **VirtualGrid** | Auto-column responsive grid |
 | **VirtualTree** | Nested hierarchy, lazy child loading |
 | **InfiniteLoader** | Bidirectional infinite scroll |
-| **VirtualSelect** | Virtualized searchable dropdown |
+| **VirtualSelect** | Virtualized searchable dropdown, simulated async/remote search |
 | **Composables** | Keyboard navigation + drag-to-reorder |
 
 ---
@@ -133,15 +148,23 @@ The core component. Renders only the rows visible in the viewport plus an oversc
 |---|---|---|---|
 | `items` | `T[]` | — | Data array |
 | `keyField` | `string` | `'id'` | Field used as the `:key` for each row |
-| `estimatedItemSize` | `number \| (item, index) => number` | `50` | Initial height estimate per row |
+| `estimatedItemSize` | `number \| (item, index) => number` | `50` | Initial size estimate per row — height, or width when `horizontal` is set |
 | `overscan` | `number` | `3` | Extra rows rendered above/below viewport |
-| `minHeight` | `number` | `0` | Minimum total list height in px |
+| `minHeight` | `number` | `0` | Minimum total list height in px (vertical mode) |
+| `minWidth` | `number` | `0` | Minimum total list width in px (`horizontal` mode) |
 | `scrollElement` | `HTMLElement \| null` | `null` | External scroll container (mutually exclusive with `pageMode`) |
-| `pageMode` | `boolean` | `false` | Use `window` as the scroll container |
+| `pageMode` | `boolean` | `false` | Use `window` as the scroll container. Fixed at mount — see note below |
+| `horizontal` | `boolean` | `false` | Virtualize along `scrollLeft`/`clientWidth` instead of `scrollTop`/`clientHeight`. RTL-safe. Fixed at mount — see note below |
 | `isLoading` | `boolean` | `false` | Shows the `#skeleton` slot when `items` is empty |
 | `restoreKey` | `string` | — | Key used to save/restore scroll position in `sessionStorage` |
 | `ssrPreloadCount` | `number` | `20` | Number of rows rendered on the server |
 | `recyclePool` | `boolean` | `false` | Reuse DOM nodes instead of unmounting them (better scroll FPS, disables key-based transitions) |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity, clearing ~150ms after scrolling settles |
+
+> `pageMode` and `horizontal` are read once at mount, like an axis/mode choice rather than a
+> live-reactive prop. If your UI lets users toggle `horizontal` at runtime, bind `:key` to the
+> value driving it (e.g. `:key="layout"`) so Vue remounts the component instead of leaving the
+> previous axis wired up — see the VirtualList demo tab's Layout toggle for a working example.
 
 ### Slots
 
@@ -167,9 +190,17 @@ import type { VirtualListExpose } from 'vue-virtual-scroller-kit'
 const listRef = ref<VirtualListExpose | null>(null)
 
 listRef.value?.scrollTo(index, align)     // 'start' | 'center' | 'end' | 'auto'
+listRef.value?.scrollTo(index, 'start', { behavior: 'smooth' }) // native smooth-scroll animation
 listRef.value?.scrollToOffset(px)         // scroll to a pixel offset
+listRef.value?.scrollToOffset(px, { behavior: 'smooth' })
 listRef.value?.measureItem(index, height) // manually set a row height
+listRef.value?.getScrollElement()         // the element that actually scrolls — pair with VirtualScrollbar
 ```
+
+> `behavior: 'smooth'` defaults to `'auto'` (instant jump, unchanged from before). Smooth-scrolling to a
+> far-off virtualized index targets the current *estimated* offset. A direct `scrollTop` write (e.g. from
+> the anchor-compensation described below) would otherwise cancel an in-progress native smooth-scroll, so
+> that compensation is suppressed for ~1s after any `behavior: 'smooth'` call.
 
 ### Examples
 
@@ -247,6 +278,36 @@ listRef.value?.measureItem(index, height) // manually set a row height
 
 > Note: `recyclePool` reuses DOM nodes so keyed Vue transitions on individual items won't work. Use it when render performance matters more than per-item animations.
 
+**Motion blur while scrolling fast:**
+
+```vue
+<VirtualList :items="rows" motion-blur :estimated-item-size="48" style="height: 500px">
+  <template #default="{ item }">
+    <div class="row">{{ item.name }}</div>
+  </template>
+</VirtualList>
+```
+
+**Horizontal layout (card strip):**
+
+```vue
+<VirtualList
+  horizontal
+  :items="cards"
+  :estimated-item-size="220"
+  style="height: 240px"
+>
+  <template #default="{ item }">
+    <div class="card" style="width: 220px; height: 100%">{{ item.title }}</div>
+  </template>
+</VirtualList>
+```
+
+> In horizontal mode, `estimatedItemSize` is a width estimate and each row is positioned via
+> `inset-inline-start` (RTL-safe) with `height: 100%` — the slot content is responsible for its
+> own `width` (fixed, or measured dynamically via `ResizeObserver`, same as row heights in
+> vertical mode). Pair with `<VirtualScrollbar orientation="horizontal">` for a themable scrollbar.
+
 ---
 
 ## GroupedVirtualList
@@ -262,6 +323,13 @@ Renders items grouped under collapsible section headers. Each group can be expan
 | `estimatedGroupHeaderSize` | `number` | `40` | Estimated height of group header rows |
 | `overscan` | `number` | `3` | Extra rows rendered outside viewport |
 | `keyField` | `string` | `'id'` | Field used as the item key |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
+| `stickyGroupHeaders` | `boolean` | `false` | Keep the current group's header pinned to the top as its items scroll underneath (overlay, see below) |
+
+> `stickyGroupHeaders` renders as a persistent overlay above the list, reusing the `#group-header`
+> slot for whichever group is currently at the top of the viewport — not a real CSS `position: sticky`
+> row, which can't work here because virtualized rows are `position: absolute`. It snaps instantly to
+> the next group (no "push" animation).
 
 ### `GroupDef<T>`
 
@@ -295,6 +363,8 @@ const listRef = ref<GroupedVirtualListExpose | null>(null)
 
 listRef.value?.toggle('group-key')  // toggle a group open/closed
 listRef.value?.scrollTo(index)      // scroll to a flat row index
+listRef.value?.scrollTo(index, 'start', { behavior: 'smooth' })
+listRef.value?.getScrollElement()   // pair with VirtualScrollbar
 ```
 
 ### Example
@@ -385,6 +455,11 @@ Features: sticky header, fixed left/right columns, single/multi-column sort with
     <tfoot>                       ← position: sticky bottom; pinnedBottomRows
 ```
 
+> The browser's native scroll anchoring (`overflow-anchor`) is disabled on `.vvsk-table` because it
+> conflicts with the spacer-row virtual-scroll technique. Instead, `useVirtualScroll` performs its own
+> anchor compensation: when a row above the viewport is measured to a different height, the scroll
+> position is nudged by the same delta so visible rows never jump.
+
 ### Props
 
 | Prop | Type | Default | Description |
@@ -398,6 +473,7 @@ Features: sticky header, fixed left/right columns, single/multi-column sort with
 | `multiSort` | `boolean` | `false` | Enable Shift+click multi-column sort |
 | `virtualizeColumns` | `boolean` | `false` | Render only horizontally visible columns (for 50+ columns) |
 | `resizableColumns` | `boolean` | `false` | Allow drag-to-resize column borders |
+| `reorderableColumns` | `boolean` | `false` | Allow dragging a whole header to reorder columns (independent of `resizableColumns`) |
 | `pinnedTopRows` | `T[]` | `[]` | Rows pinned inside `<thead>`, always visible at the top |
 | `pinnedBottomRows` | `T[]` | `[]` | Rows pinned inside `<tfoot>`, always visible at the bottom |
 | `overscan` | `number` | `3` | Extra rows rendered outside the viewport |
@@ -407,6 +483,7 @@ Features: sticky header, fixed left/right columns, single/multi-column sort with
 | `isLoading` | `boolean` | `false` | Whether a load is in progress (prevents duplicate calls) |
 | `loadMoreThreshold` | `number` | `150` | Distance from the bottom edge in px that triggers `onLoadMore` |
 | `uniformRowHeight` | `boolean` | `false` | All rows have identical height — disables `ResizeObserver` to prevent scroll drift. Set `estimatedItemSize` to the exact row height |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
 
 ### `ColumnDef`
 
@@ -427,9 +504,9 @@ interface ColumnDef {
 |---|---|---|
 | `#header-cell` | `{ column: ColumnDef }` | Custom header cell content. Default renders title + sort arrow (↑/↓) for the active sort column only |
 | `#row` | `{ row: T, index: number }` | Replace entire `<tr>` rendering |
-| `#cell` | `{ row: T, column: ColumnDef, value: unknown }` | Custom cell content |
+| `#cell` | `{ row: T, column: ColumnDef, value: unknown, index: number }` | Custom cell content |
 | `#pinned-row` | `{ row: T, index: number, position: 'top' \| 'bottom' }` | Replace entire pinned `<tr>` |
-| `#pinned-cell` | `{ row: T, column: ColumnDef, value: unknown, position: 'top' \| 'bottom' }` | Custom pinned cell content |
+| `#pinned-cell` | `{ row: T, column: ColumnDef, value: unknown, position: 'top' \| 'bottom', index: number }` | Custom pinned cell content |
 | `#loading-indicator` | — | Shown below the table when `isLoading && hasMore` |
 
 ### Emits
@@ -438,6 +515,8 @@ interface ColumnDef {
 |---|---|---|
 | `sort-change` | `SortChange \| SortChange[]` | Single sort object (sortable), or array (multiSort) |
 | `column-resize` | `[key: string, width: number]` | Fires after a column drag-resize ends |
+| `column-reorder` | `[order: string[]]` | Fires after a column drag-reorder ends, with the new column key order |
+| `column-visibility-change` | `{ key: string; visible: boolean }` | Fires after `setColumnVisible`/`toggleColumnVisible` changes a column's visibility |
 | `scroll` | `Event` | Native scroll event from the container |
 | `visible-range-change` | `{ start: number; end: number }` | Fires on scroll with the current visible row indices |
 
@@ -458,13 +537,25 @@ import type { VirtualListExpose } from 'vue-virtual-scroller-kit'
 const tableRef = ref<VirtualListExpose & {
   getSortStack: () => SortChange[]
   clearSort: () => void
+  setColumnVisible: (key: string, visible: boolean) => void
+  toggleColumnVisible: (key: string) => void
+  getHiddenColumns: () => string[]
 } | null>(null)
 
 tableRef.value?.scrollTo(rowIndex, 'start')   // 'start' | 'center' | 'end' | 'auto'
+tableRef.value?.scrollTo(rowIndex, 'start', { behavior: 'smooth' })
 tableRef.value?.scrollToOffset(px)
 tableRef.value?.clearSort()
 tableRef.value?.getSortStack()                 // current sort state
+tableRef.value?.getScrollElement()             // pair with VirtualScrollbar
+tableRef.value?.toggleColumnVisible('email')   // hide/show a column at runtime
+tableRef.value?.setColumnVisible('email', false)
+tableRef.value?.getHiddenColumns()             // current hidden column keys
 ```
+
+> Hiding a column is runtime/interactive state — like sort or column order — so it's exposed via
+> the template ref rather than a prop. Hidden columns are dropped from rendering, column
+> virtualization, and fixed-column offset math uniformly.
 
 ### CSS custom property
 
@@ -712,6 +803,101 @@ fetchRows(1, true)
 
 ---
 
+**Drag-to-reorder columns** — drag a whole header to move it; independent of `resizableColumns`
+(dragging the resize handle at the column edge never triggers a reorder):
+
+```vue
+<script setup lang="ts">
+function onColumnReorder(order: string[]) {
+  // Persist the new column order, e.g. to localStorage.
+  localStorage.setItem('table-column-order', JSON.stringify(order))
+}
+</script>
+
+<template>
+  <VirtualTable
+    :columns="columns"
+    :rows="rows"
+    reorderable-columns
+    style="height: 500px"
+    @column-reorder="onColumnReorder"
+  />
+</template>
+```
+
+> Column order is tracked internally (like `resizableColumns` widths) and not written back to your
+> `columns` prop — listen for `column-reorder` if you want to persist it.
+
+---
+
+**Column show/hide** — a checklist toggling columns at runtime:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { VirtualTable } from 'vue-virtual-scroller-kit'
+
+const tableRef = ref<InstanceType<typeof VirtualTable> | null>(null)
+</script>
+
+<template>
+  <label v-for="col in columns" :key="col.key">
+    <input
+      type="checkbox"
+      checked
+      @change="tableRef?.toggleColumnVisible(col.key)"
+    />
+    {{ col.title }}
+  </label>
+
+  <VirtualTable ref="tableRef" :columns="columns" :rows="rows" style="height: 500px" />
+</template>
+```
+
+> Like `columnOrder`, hidden state lives in the component (not written back to `columns`) — listen
+> for `column-visibility-change` to persist it.
+
+---
+
+**Row selection with checkboxes** — pairs `useRowSelection` with the `index` now exposed on
+`#cell`/`#pinned-cell`. Click to toggle, Shift+click to select a range:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { VirtualTable, useRowSelection } from 'vue-virtual-scroller-kit'
+import type { ColumnDef } from 'vue-virtual-scroller-kit'
+
+interface User { id: number; name: string; email: string }
+const rows = ref<User[]>([/* … */])
+
+const selection = useRowSelection<User>({ items: rows })
+
+const columns: ColumnDef[] = [
+  { key: '__select', title: '', width: 36, fixed: 'left' },
+  { key: 'name', title: 'Name' },
+  { key: 'email', title: 'Email' },
+]
+</script>
+
+<template>
+  <VirtualTable :columns="columns" :rows="rows" key-field="id" style="height: 500px">
+    <template #cell="{ column, row, index }">
+      <input
+        v-if="column.key === '__select'"
+        type="checkbox"
+        :checked="selection.isSelected(row, index)"
+        @click="selection.toggle(row, index, $event)"
+      />
+      <span v-else>{{ row[column.key as keyof User] }}</span>
+    </template>
+  </VirtualTable>
+  <p>{{ selection.selectedItems.value.length }} selected</p>
+</template>
+```
+
+---
+
 ## VirtualGrid
 
 A virtual grid that arranges items in rows and columns. Column count can be fixed or auto-calculated from `columnWidth` and the container width.
@@ -723,11 +909,13 @@ A virtual grid that arranges items in rows and columns. Column count can be fixe
 | `items` | `T[]` | — | Data array |
 | `columns` | `number` | `0` | Fixed column count. Pass `0` to auto-compute from `columnWidth` |
 | `columnWidth` | `number` | `200` | Cell width for auto-column calculation |
-| `rowHeight` | `number` | `200` | Fixed cell height in px |
+| `rowHeight` | `number` | `200` | Cell height in px — the initial estimate when `dynamicRowHeight` is on |
 | `gap` | `number` | `8` | Gap between cells in px |
 | `keyField` | `string` | `'id'` | Key field |
 | `overscan` | `number` | `2` | Extra rows outside the viewport |
 | `isLoading` | `boolean` | `false` | Shows skeleton when `items` is empty |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
+| `dynamicRowHeight` | `boolean` | `false` | Measure each row's actual height via `ResizeObserver` instead of a fixed `rowHeight` (row height = max of that row's cells) |
 
 ### Slots
 
@@ -776,6 +964,33 @@ const photos: Photo[] = Array.from({ length: 10_000 }, (_, i) => ({
 
 ---
 
+**Dynamic row height** — when cell content height varies (e.g. captions of different lengths),
+row height is measured per row instead of fixed:
+
+```vue
+<VirtualGrid
+  :items="photos"
+  :column-width="220"
+  :row-height="220"
+  dynamic-row-height
+  :gap="12"
+  style="height: 600px"
+>
+  <template #default="{ item }">
+    <div class="photo-card" style="height: auto">
+      <img :src="item.url" :alt="item.title" />
+      <p>{{ item.title }}</p>
+      <p v-if="item.caption" class="photo-card__caption">{{ item.caption }}</p>
+    </div>
+  </template>
+</VirtualGrid>
+```
+
+> With `dynamicRowHeight`, cells no longer get a fixed `height` from the grid — give them
+> `height: auto` (or leave `height` unset) so their content determines the row's real height.
+
+---
+
 ## VirtualTree
 
 A tree view with expand/collapse, configurable indent per depth level, and optional lazy (async) child loading.
@@ -789,6 +1004,7 @@ A tree view with expand/collapse, configurable indent per depth level, and optio
 | `estimatedItemSize` | `number` | `36` | Estimated row height |
 | `overscan` | `number` | `5` | Extra rows outside the viewport |
 | `onLoadChildren` | `(node) => Promise<TreeNode<T>[]>` | — | Called when a node with `hasChildren: true` is first expanded |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
 
 ### `TreeNode<T>`
 
@@ -904,6 +1120,7 @@ Wraps `VirtualList` and calls `onLoadMore` when the user scrolls within `thresho
 | `estimatedItemSize` | `number` | `50` | Estimated row height |
 | `overscan` | `number` | `3` | Extra rows outside viewport |
 | `keyField` | `string` | `'id'` | Row key field |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
 
 ### Slots
 
@@ -921,7 +1138,9 @@ Wraps `VirtualList` and calls `onLoadMore` when the user scrolls within `thresho
 
 ```ts
 loaderRef.value?.scrollTo(index, align)
+loaderRef.value?.scrollTo(index, 'start', { behavior: 'smooth' })
 loaderRef.value?.scrollToOffset(px)
+loaderRef.value?.getScrollElement()
 ```
 
 ### Example
@@ -994,6 +1213,10 @@ A searchable select input backed by a virtualized dropdown. Handles hundreds of 
 | `searchable` | `boolean` | `true` | Show a search input when the dropdown opens |
 | `estimatedItemSize` | `number` | `36` | Estimated option row height |
 | `maxVisibleRows` | `number` | `8` | Max rows shown before the dropdown scrolls |
+| `motionBlur` | `boolean` | `false` | Apply a CSS blur that scales with scroll velocity while scrolling fast |
+| `remote` | `boolean` | `false` | Skip client-side filtering — `options` is rendered as-is; you update it yourself in response to `search` |
+| `debounceMs` | `number` | `0` | Delay before the `search` event fires after typing stops (coalesces keystrokes for a server round-trip). `0` keeps today's synchronous behavior |
+| `isLoading` | `boolean` | `false` | Shows the `#loading` slot in the dropdown, checked before the `#empty` slot so an in-flight remote search doesn't flash "No options" |
 
 ### Emits
 
@@ -1008,13 +1231,15 @@ A searchable select input backed by a virtualized dropdown. Handles hundreds of 
 | Slot | Scope | Description |
 |---|---|---|
 | `#default` | `{ option: T, index: number, selected: boolean }` | Custom option row |
-| `#empty` | — | Shown when `filteredOptions` is empty |
+| `#empty` | — | Shown when `filteredOptions` is empty and not loading |
+| `#loading` | — | Shown while `isLoading` is true, in place of the option list |
 
 ### Exposed API
 
 ```ts
 selectRef.value?.open()
 selectRef.value?.close()
+selectRef.value?.getScrollElement() // pair with VirtualScrollbar
 ```
 
 ### Example
@@ -1051,6 +1276,120 @@ const selected = ref<Country | null>(null)
 </template>
 ```
 
+**Async/remote search** — `options` is populated from a server, filtering happens there instead of client-side:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { VirtualSelect } from 'vue-virtual-scroller-kit'
+
+interface Country { value: string; label: string }
+
+const selected = ref<Country | null>(null)
+const results = ref<Country[]>([])
+const isLoading = ref(false)
+let requestId = 0
+
+async function onSearch(query: string) {
+  const id = ++requestId
+  isLoading.value = true
+  try {
+    const res = await fetch(`/api/countries?q=${encodeURIComponent(query)}`)
+    const data: Country[] = await res.json()
+    if (id !== requestId) return // a newer keystroke already fired another request
+    results.value = data
+  } finally {
+    if (id === requestId) isLoading.value = false
+  }
+}
+</script>
+
+<template>
+  <VirtualSelect
+    v-model="selected"
+    :options="results"
+    remote
+    :debounce-ms="300"
+    :is-loading="isLoading"
+    label-field="label"
+    value-field="value"
+    style="width: 300px"
+    @search="onSearch"
+  >
+    <template #loading>Searching…</template>
+  </VirtualSelect>
+</template>
+```
+
+---
+
+## VirtualScrollbar
+
+A themable custom scrollbar overlay. Decoupled from `useVirtualScroll` — it works with the scroll
+element exposed by any component above (via `getScrollElement()`), or any scrollable element you pass
+directly. Renders a track + draggable thumb sized and positioned from `scrollHeight`/`clientHeight`/`scrollTop`,
+and drags with pointer events.
+
+### Props
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `target` | `() => HTMLElement \| null` | — | Returns the scroll element to sync with |
+| `orientation` | `'vertical' \| 'horizontal'` | `'vertical'` | Scroll axis to track |
+| `minThumbSize` | `number` | `24` | Minimum thumb size in px, so a huge list doesn't shrink it to an ungrabbable sliver |
+
+### CSS custom properties
+
+| Property | Default | Description |
+|---|---|---|
+| `--vvsk-scrollbar-size` | `10px` | Thickness of the track/thumb |
+| `--vvsk-scrollbar-track` | `transparent` | Track background |
+| `--vvsk-scrollbar-thumb` | `rgb(255 255 255 / 25%)` | Thumb background |
+| `--vvsk-scrollbar-thumb-hover` | `rgb(255 255 255 / 40%)` | Thumb background while hovered/dragged |
+
+### Example
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { VirtualList, VirtualScrollbar } from 'vue-virtual-scroller-kit'
+import type { VirtualListExpose } from 'vue-virtual-scroller-kit'
+
+const listRef = ref<VirtualListExpose | null>(null)
+const items = Array.from({ length: 10_000 }, (_, i) => ({ id: i, text: `Row ${i + 1}` }))
+</script>
+
+<template>
+  <div style="position: relative; display: flex; height: 500px">
+    <VirtualList
+      ref="listRef"
+      :items="items"
+      :estimated-item-size="48"
+      class="vvsk-scrollbar-hidden"
+      style="flex: 1"
+    >
+      <template #default="{ item }">
+        <div style="padding: 12px 16px; border-bottom: 1px solid #eee">{{ item.text }}</div>
+      </template>
+    </VirtualList>
+
+    <VirtualScrollbar :target="() => listRef?.getScrollElement() ?? null" />
+  </div>
+</template>
+```
+
+Hide the native scrollbar on the paired container when using `VirtualScrollbar` (optional — the two can
+coexist if you want both):
+
+```css
+.vvsk-scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+}
+.vvsk-scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+```
+
 ---
 
 ## useVirtualScroll
@@ -1065,23 +1404,30 @@ The low-level composable that powers all components. Use it when you need to bui
 | `estimatedItemSize` | `SizeProvider \| Ref<SizeProvider>` | `50` | Estimated item height: number or `(index) => number`. A `Ref` triggers a full rebuild when it changes |
 | `overscan` | `number` | `3` | Extra items rendered outside the viewport |
 | `getScrollElement` | `() => HTMLElement \| null` | — | Returns the scroll container |
-| `pageMode` | `boolean` | `false` | Use `window` as the scroll container |
+| `pageMode` | `boolean` | `false` | Use `window` as the scroll container. Read once, not reactive — see note below |
+| `horizontal` | `boolean` | `false` | Virtualize `scrollLeft`/`clientWidth` instead of `scrollTop`/`clientHeight`, RTL-safe via `normalizeScrollLeft`. Read once, not reactive — see note below |
+| `motionBlur` | `boolean` | `false` | Track scroll velocity and expose it as `blurAmount` (px). Off by default — zero cost when disabled |
 
 ```ts
 type SizeProvider = number | ((index: number) => number)
 ```
+
+> `pageMode` and `horizontal` are captured from `options` once when the composable is set up —
+> changing them on a live instance has no effect. If you need to switch axes at runtime, remount
+> the component that calls `useVirtualScroll` (e.g. via `:key`).
 
 ### Return value
 
 | Property | Type | Description |
 |---|---|---|
 | `visibleRange` | `Readonly<Ref<VisibleRange>>` | `{ start, end }` — first and last visible item indices |
-| `totalHeight` | `Readonly<Ref<number>>` | Total scrollable height in px |
-| `offsetTop` | `(index: number) => number` | Pixel offset of item at index |
-| `scrollTo` | `(index, align?) => void` | Scroll to item (`'start' \| 'center' \| 'end' \| 'auto'`) |
-| `scrollToOffset` | `(offset: number) => void` | Scroll to a raw pixel offset |
+| `totalHeight` | `Readonly<Ref<number>>` | Total scrollable size in px along the scroll axis (height, or width when `horizontal`) |
+| `offsetTop` | `(index: number) => number` | Pixel offset of item at index along the scroll axis (top, or left when `horizontal`) |
+| `scrollTo` | `(index, align?, options?) => void` | Scroll to item (`'start' \| 'center' \| 'end' \| 'auto'`). `options.behavior` is `'auto'` (default, instant) or `'smooth'` |
+| `scrollToOffset` | `(offset: number, options?) => void` | Scroll to a raw pixel offset. Same `options.behavior` |
 | `measureItem` | `(index, height) => void` | Report a measured row height |
 | `handleScroll` | `() => void` | Manually trigger a visible-range recalculation |
+| `blurAmount` | `Readonly<Ref<number>>` | Current motion-blur radius in px. Always `0` unless the `motionBlur` option is enabled |
 
 ### Example
 
@@ -1280,6 +1626,148 @@ const { isDragging, dragIndex, ghostStyle, getItemStyle, getItemProps } = useDra
 
 ---
 
+## useRowSelection
+
+Dataset-agnostic click / Shift-click row selection — works with `VirtualList`, `VirtualTable`, or any
+plain array. Not tied to a specific component: pair `isSelected`/`toggle` with whichever row-index
+slot scope your component exposes.
+
+### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `items` | `Ref<T[]> \| ComputedRef<T[]>` | — | Reactive items array |
+| `getKey` | `(item: T, index: number) => string \| number` | `item.id ?? index` | Identity used for the selection set |
+| `multiple` | `boolean` | `true` | `false` restricts to a single selected row; a new `toggle` call replaces the selection instead of adding to it |
+
+### Return value
+
+| Property | Type | Description |
+|---|---|---|
+| `selectedKeys` | `Readonly<Ref<Set<string \| number>>>` | Currently selected keys |
+| `selectedItems` | `ComputedRef<T[]>` | Currently selected items, derived from `items` + `selectedKeys` |
+| `isSelected` | `(item: T, index: number) => boolean` | Whether a row is selected |
+| `toggle` | `(item: T, index: number, event?: MouseEvent \| KeyboardEvent) => void` | Toggle a row. `event.shiftKey` fills the range from the last-toggled row to this one (Gmail-checkbox convention), on top of whatever's already selected |
+| `selectAll` | `() => void` | Select every row in `items` |
+| `clearSelection` | `() => void` | Clear the selection and reset the shift-range anchor |
+
+### Example
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { VirtualList, useRowSelection } from 'vue-virtual-scroller-kit'
+
+interface Row { id: number; label: string }
+const items = ref<Row[]>(Array.from({ length: 1000 }, (_, i) => ({ id: i, label: `Row ${i + 1}` })))
+
+const selection = useRowSelection<Row>({ items })
+</script>
+
+<template>
+  <VirtualList :items="items" key-field="id" :estimated-item-size="40" style="height: 500px">
+    <template #default="{ item, index }">
+      <label>
+        <input
+          type="checkbox"
+          :checked="selection.isSelected(item, index)"
+          @click="selection.toggle(item, index, $event)"
+        />
+        {{ item.label }}
+      </label>
+    </template>
+  </VirtualList>
+  <p>{{ selection.selectedItems.value.length }} selected</p>
+</template>
+```
+
+> Click toggles one row in place; Shift+click fills the range from the last-toggled row. For
+> `VirtualTable`, pair this with the `index` now available on the `#cell` slot — see the
+> [row-selection example](#virtualtable) above.
+
+---
+
+## useVisibilityTracker
+
+Per-key "entered viewport" / "left viewport" tracking, backed by a real `IntersectionObserver`
+rather than diffing `visibleRange` — so it's accurate even with a large `overscan` buffer or
+partial-visibility thresholds. Dataset-agnostic: you decide which elements to `observe()`, each
+under whatever key you like (a row id, an index, anything).
+
+Typical use: highlight a nav/minimap entry, a table-of-contents item, or a "jump to" button in a
+control panel while the corresponding row is actually on screen in a virtualized list or table —
+turning it off the instant the row scrolls back out.
+
+### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `root` | `() => HTMLElement \| null` | — | Returns the scroll container to intersect against. Omit to use the browser viewport |
+| `rootMargin` | `string` | `'0px'` | IntersectionObserver `rootMargin` — grow/shrink the root's effective bounds (e.g. trigger slightly early) |
+| `threshold` | `number \| number[]` | `0` | Fraction of the element that must be visible to count as "visible" |
+| `onVisible` | `(key: string \| number) => void` | — | Called when a tracked key becomes visible |
+| `onHidden` | `(key: string \| number) => void` | — | Called when a tracked key becomes hidden (including via `unobserve` while it was visible) |
+
+### Return value
+
+| Property | Type | Description |
+|---|---|---|
+| `visibleKeys` | `Readonly<Ref<Set<string \| number>>>` | Keys currently intersecting the root |
+| `isVisible` | `(key: string \| number) => boolean` | Whether `key` is currently visible |
+| `observe` | `(el: Element \| null, key: string \| number) => void` | Start tracking an element under `key` — bind via a template ref callback |
+| `unobserve` | `(key: string \| number) => void` | Stop tracking `key` (e.g. on row unmount) |
+
+> `root` may resolve after this composable's own setup runs (e.g. a sibling `VirtualList`'s
+> template ref) — it's polled for a few frames, and rebuilt automatically if the resolved root
+> element ever changes (such as after a `:key`-forced remount).
+
+### Example
+
+Watch specific rows and mirror their visibility into a sidebar panel — same pattern used by the
+VirtualList demo's "Watchlist":
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { VirtualList, useVisibilityTracker } from 'vue-virtual-scroller-kit'
+import type { VirtualListExpose } from 'vue-virtual-scroller-kit'
+
+interface Row { id: number; title: string }
+const items = ref<Row[]>(Array.from({ length: 100_000 }, (_, i) => ({ id: i + 1, title: `Row ${i + 1}` })))
+const listRef = ref<VirtualListExpose | null>(null)
+const watchedIds = ref<Set<number>>(new Set([1, 50_000]))
+
+const tracker = useVisibilityTracker({
+  root: () => listRef.value?.getScrollElement() ?? null,
+})
+
+// Rows unmount when scrolled out of the virtualized range, so track/untrack on
+// mount/unmount rather than assuming an observed element stays alive.
+function onRowMount(el: Element, id: number) {
+  if (watchedIds.value.has(id)) tracker.observe(el, id)
+}
+function onRowUnmount(id: number) {
+  tracker.unobserve(id)
+}
+</script>
+
+<template>
+  <VirtualList ref="listRef" :items="items" key-field="id" :estimated-item-size="48" style="height: 500px">
+    <template #default="{ item }">
+      <div
+        :ref="(el) => el && onRowMount(el as Element, item.id)"
+        @vue:unmounted="onRowUnmount(item.id)"
+        :style="{ background: watchedIds.has(item.id) && tracker.isVisible(item.id) ? '#fef08a' : 'transparent' }"
+      >
+        {{ item.title }}
+      </div>
+    </template>
+  </VirtualList>
+</template>
+```
+
+---
+
 ## PositionManager
 
 The internal segment tree exposed for advanced use cases. Stores row heights and answers prefix-sum queries in O(log n).
@@ -1379,6 +1867,9 @@ import type {
   // Scroll alignment
   ScrollAlign,           // 'start' | 'center' | 'end' | 'auto'
 
+  // Options for scrollTo/scrollToOffset — { behavior?: 'auto' | 'smooth' }
+  ScrollBehaviorOptions,
+
   // Visible range returned by useVirtualScroll
   VisibleRange,          // { start: number; end: number }
 
@@ -1401,6 +1892,14 @@ import type {
 
   // Size provider for PositionManager / useVirtualScroll
   SizeProvider,          // number | ((index: number) => number)
+
+  // Options/return types for useRowSelection
+  UseRowSelectionOptions,
+  UseRowSelectionReturn,
+
+  // Options/return types for useVisibilityTracker
+  UseVisibilityTrackerOptions,
+  UseVisibilityTrackerReturn,
 } from 'vue-virtual-scroller-kit'
 ```
 
@@ -1441,7 +1940,39 @@ const listRef = ref<VirtualListExpose | null>(null)
 
 All components render the first `ssrPreloadCount` rows (default 20) on the server with estimated heights. Client-side hydration replaces estimated positions with measured heights incrementally using `ResizeObserver` — no layout shift or scroll jump occurs.
 
-Components that use browser-only APIs (`ResizeObserver`, `requestAnimationFrame`, `window.scroll`) guard those APIs with `typeof window !== 'undefined'` and `onMounted`. All core logic and slot rendering is SSR-safe.
+Components that use browser-only APIs (`ResizeObserver`, `IntersectionObserver`, `requestAnimationFrame`, `window.scroll`) guard those APIs with `typeof window !== 'undefined'` and `onMounted`. All core logic and slot rendering is SSR-safe.
+
+---
+
+## RTL support
+
+Wrap your app (or just the parts using this library) in `dir="rtl"` — no `rtl` prop exists anywhere,
+because none is needed:
+
+```vue
+<VirtualTable :columns="columns" :rows="rows" dir="rtl" style="height: 500px" />
+```
+
+Every component uses **CSS logical properties** (`inset-inline-start`/`inset-inline-end`,
+`padding-inline-start`, `margin-inline-start`) instead of physical `left`/`right` for positioning —
+`VirtualTree` indent, `VirtualTable` fixed columns and the column-resize handle, `VirtualGrid` cell
+placement, and `VirtualScrollbar`'s horizontal thumb all mirror automatically whenever the browser
+resolves `direction: rtl`, with zero JavaScript direction-branching.
+
+The one place that genuinely needs JS is `element.scrollLeft`, whose sign/origin differs in RTL across
+browsers (0 at the start edge, negative going toward the end, per the modern spec). `VirtualTable`'s
+column virtualization, `VirtualScrollbar`'s horizontal mode, and `VirtualList`'s `horizontal` layout
+all read/write it through `normalizeScrollLeft` / `setNormalizedScrollLeft` rather than the raw
+property — both are also exported from `vue-virtual-scroller-kit` if you need the same normalization
+in your own code. Column drag-to-resize also flips its pointer-delta sign in RTL, since the resize
+handle sits on the physical left edge there.
+
+```ts
+import { normalizeScrollLeft, setNormalizedScrollLeft } from 'vue-virtual-scroller-kit'
+
+const distanceFromStart = normalizeScrollLeft(el) // works the same in LTR and RTL
+setNormalizedScrollLeft(el, distanceFromStart + 100)
+```
 
 ---
 
@@ -1457,26 +1988,39 @@ vue-virtual-scroller-kit
 │     itemCount + estimatedItemSize → visibleRange, totalHeight, scrollTo
 │     ResizeObserver on scroll container (viewport resize)
 │     RAF-batched recalc, debounced row measurements
+│     Anchor-compensated reflow: height changes above the viewport nudge
+│     scrollTop by the same delta so visible rows never jump
+│     Optional velocity tracking → blurAmount (motionBlur option)
+│     Optional horizontal axis (scrollLeft/clientWidth, RTL-safe via
+│     normalizeScrollLeft); fixed at mount, like pageMode
 │
 ├── VirtualList
 │     scrollElement / pageMode / window scroll
 │     ResizeObserver per visible row (dynamic heights)
 │     Scroll restoration via sessionStorage
 │     DOM recycling pool (recyclePool prop)
+│     Optional horizontal layout (horizontal prop)
 │
 ├── GroupedVirtualList
 │     Flattens GroupDef[] → VirtualRow[] (headers + items)
 │     Animated collapse/expand state machine per group
+│     Optional sticky-header overlay (stickyGroupHeaders), tracks the group
+│     at visibleRange.start — not a real CSS sticky row (rows are absolute)
 │     Backed by VirtualList
 │
 ├── VirtualTable
-│     Sticky header, fixed columns, sort, resize, column virtualization
+│     Sticky header, fixed columns, sort, resize, reorder, column virtualization
 │     Pinned top/bottom rows, built-in lazy loading (onLoadMore / hasMore / isLoading)
+│     Column order (columnOrder) and visibility (hiddenColumnKeys) tracked
+│     internally, both overlay the columns prop
 │     Backed by VirtualList
 │
 ├── VirtualGrid
 │     Auto-column count from container width (ResizeObserver)
 │     rowHeightWithGap fed as Ref to useVirtualScroll
+│     Optional dynamicRowHeight: per-row wrapper (flex) + ResizeObserver,
+│     row height = max of that row's cells, instead of individually
+│     absolutely-positioned fixed-height cells
 │     Backed by useVirtualScroll directly
 │
 ├── VirtualTree
@@ -1489,18 +2033,76 @@ vue-virtual-scroller-kit
 │     Backed by VirtualList
 │
 ├── VirtualSelect
-│     Client-side filter, keyboard nav, open/close lifecycle
+│     Client-side filter or opt-in remote mode (debounced search event,
+│     isLoading slot), keyboard nav, open/close lifecycle
 │     Backed by VirtualList
+│
+├── VirtualScrollbar
+│     Decoupled from useVirtualScroll — syncs to any getScrollElement()
+│     via its own scroll/ResizeObserver listeners
+│     Pointer-drag thumb + click-to-jump track
 │
 ├── useVirtualKeyboardNav
 │     Standalone composable — keydown on target or document
 │
-└── useDraggableList
-      Pointer events (no HTML5 Drag API)
-      Ghost element via fixed positioning + Teleport
-      Gap animation via translateY on neighbours
-      Auto-scroll RAF loop when near scroll container edges
+├── useDraggableList
+│     Pointer events (no HTML5 Drag API)
+│     Ghost element via fixed positioning + Teleport
+│     Gap animation via translateY on neighbours
+│     Auto-scroll RAF loop when near scroll container edges
+│
+├── useRowSelection
+│     Dataset-agnostic (works with VirtualList, VirtualTable, plain arrays)
+│     Click toggles in place; Shift+click fills a range from the
+│     last-toggled index (Gmail-checkbox convention)
+│
+└── useVisibilityTracker
+      Per-key observe()/unobserve(), backed by a real IntersectionObserver
+      (not visibleRange diffing — accurate under overscan/partial thresholds)
+      Root polled + rebuilt automatically if it resolves late or changes
 ```
+
+---
+
+## Performance
+
+`src/__bench__/` has Vitest benchmarks (`vitest bench`, tinybench under the hood) for the two
+pieces that carry the package's O(log n) claim: the `PositionManager` segment tree directly, and
+`useVirtualScroll`'s mount/rebuild cost on top of it. Run them yourself with:
+
+```bash
+npm run bench
+```
+
+> Benchmarking is an experimental Vitest feature — numbers can shift between Vitest versions.
+> These are isolated micro-benchmarks in jsdom (component mount/unmount, no real paint or layout),
+> not a substitute for profiling an actual app. Treat them as *relative* evidence of the O(log n)
+> design, not as absolute numbers for your hardware.
+
+**`PositionManager`** — per-operation mean time, one developer machine, single run:
+
+| Items (n) | `construct` (fixed height) | `findIndex` | `set` (resize) | `getOffset` |
+|---:|---:|---:|---:|---:|
+| 1,000 | 0.0125 ms | 0.0001 ms | 0.0001 ms | 0.0001 ms |
+| 10,000 | 0.166 ms | 0.0002 ms | 0.0001 ms | 0.0002 ms |
+| 100,000 | 0.612 ms | 0.0002 ms | 0.0002 ms | 0.0002 ms |
+
+`construct` is the one O(n) operation (it builds the whole tree once) — its cost grows with `n`, as
+expected. `findIndex`, `set`, and `getOffset` are the O(log n) operations queried on every scroll
+event and every row measurement; their per-call cost barely moves from 1,000 to 100,000 items —
+this is the segment tree doing its job.
+
+**`useVirtualScroll`** — mounting the composable in a real Vue component, and rebuilding its
+internal `PositionManager` on an `itemCount` change:
+
+| Items (n) | Mount | `itemCount` change (rebuild) |
+|---:|---:|---:|
+| 1,000 | 0.204 ms | 0.206 ms |
+| 10,000 | 0.352 ms | 0.373 ms |
+| 100,000 | 1.51 ms | 2.22 ms |
+
+Both scale with the `PositionManager` construction cost inside them, plus Vue's own
+mount/reactivity overhead — still comfortably sub-millisecond to low-millisecond even at 100k rows.
 
 ---
 
@@ -1511,6 +2113,32 @@ vue-virtual-scroller-kit
 | `vue-virtual-scroller-kit` | `vue ^3.3` | Full bundle — all components and composables |
 
 The package ships as tree-shakeable ESM (`dist/index.js`) + CJS (`dist/index.cjs`) dual build. Importing only `VirtualList` and leaving `VirtualTable`, `VirtualTree`, etc. unused results in those modules being dropped by your bundler.
+
+---
+
+## Development
+
+```bash
+npm install
+npm run typecheck   # vue-tsc
+npm run lint        # eslint
+npm run lint:css    # stylelint
+npm test            # vitest — unit tests (src/__tests__)
+npm run demo        # starts the demo app at http://localhost:5173
+```
+
+End-to-end tests drive the demo app in a real browser (Playwright) and live in `demo/e2e/` — this is
+what actually catches scroll-timing and browser-API bugs that jsdom can't (real smooth-scroll
+animation, real `ResizeObserver`/`requestAnimationFrame` timing, real RTL layout):
+
+```bash
+cd demo
+npm install
+npm run test:e2e
+```
+
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, and build on Node 18 and 20, plus
+the e2e suite, on every push and pull request.
 
 ---
 
