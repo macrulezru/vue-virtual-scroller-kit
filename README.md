@@ -2137,7 +2137,7 @@ npm install
 npm run test:e2e
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, and build on Node 18 and 20, plus
+CI (`.github/workflows/ci.yml`) runs typecheck, lint, unit tests, and build on Node 20 and 22, plus
 the e2e suite, on every push and pull request.
 
 ---
