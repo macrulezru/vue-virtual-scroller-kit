@@ -22,6 +22,25 @@ const allCountries: Country[] = Array.from({ length: 10000 }, (_, i) => ({
 const selected1 = ref<Country | null>(null)
 const selected2 = ref<Country | null>(null)
 const selected3 = ref<Country | null>(null)
+const selected4 = ref<Country | null>(null)
+
+/* ── Remote/async search — simulates a debounced server round-trip ─────────── */
+const remoteOptions = ref<Country[]>(allCountries.slice(0, 20))
+const remoteLoading = ref(false)
+let remoteRequestId = 0
+
+function onRemoteSearch(query: string) {
+  remoteLoading.value = true
+  const requestId = ++remoteRequestId
+  setTimeout(() => {
+    if (requestId !== remoteRequestId) return // a newer search superseded this one
+    const q = query.trim().toLowerCase()
+    remoteOptions.value = q
+      ? allCountries.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 50)
+      : allCountries.slice(0, 20)
+    remoteLoading.value = false
+  }, 500) // simulated network latency
+}
 
 const filterContinent = ref('')
 const filteredOptions = computed(() =>
@@ -58,6 +77,7 @@ function formatPop(n: number): string {
           <li>Keyboard navigation (↑↓ Enter Esc)</li>
           <li>Clearable selection</li>
           <li>Custom option slot</li>
+          <li>Remote/async search with debounce + loading state</li>
         </ul>
       </div>
     </div>
@@ -128,6 +148,30 @@ function formatPop(n: number): string {
                 </div>
                 <span v-if="selected" class="custom-option__check">✓</span>
               </div>
+            </template>
+          </VirtualSelect>
+        </section>
+
+        <section class="demo-section">
+          <h3>Remote search (simulated server, 500ms latency)</h3>
+          <p class="demo-selection" style="margin: 0 0 12px">
+            Options start as a small "first page"; typing debounces 300ms then fetches
+            (simulated) matching results and shows a loading state meanwhile.
+          </p>
+          <VirtualSelect
+            v-model="selected4"
+            :options="remoteOptions"
+            label-field="name"
+            value-field="code"
+            placeholder="Type to search remotely…"
+            remote
+            :debounce-ms="300"
+            :is-loading="remoteLoading"
+            style="max-width: 420px"
+            @search="onRemoteSearch"
+          >
+            <template #loading>
+              <div style="padding: 4px 0">⏳ Searching…</div>
             </template>
           </VirtualSelect>
         </section>

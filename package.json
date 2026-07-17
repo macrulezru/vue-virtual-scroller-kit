@@ -1,6 +1,6 @@
 {
   "name": "vue-virtual-scroller-kit",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "Virtual list, table, grid and tree for Vue 3 — dynamic row heights, grouping, sticky headers, infinite scroll and SSR support.",
   "author": "macrulez <macrulezru@gmail.com> (https://macrulez.ru/en)",
   "homepage": "https://github.com/macrulezru/vue-virtual-scroller-kit#readme",
@@ -38,6 +38,7 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench --run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

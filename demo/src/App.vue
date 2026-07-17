@@ -14,6 +14,7 @@ const tabs = [
 
 type TabId = typeof tabs[number]['id']
 const activeTab = ref<TabId>('virtual-list')
+const dir = ref<'ltr' | 'rtl'>('ltr')
 
 const VirtualListDemo    = defineAsyncComponent(() => import('./demos/VirtualListDemo.vue'))
 const VirtualTableDemo   = defineAsyncComponent(() => import('./demos/VirtualTableDemo.vue'))
@@ -44,6 +45,13 @@ const componentMap = {
         <span class="app-header__logo">⚡</span>
         <span class="app-header__name">vue-virtual-scroller-kit</span>
       </div>
+      <button
+        class="app-header__dir-toggle"
+        :aria-pressed="dir === 'rtl'"
+        @click="dir = dir === 'ltr' ? 'rtl' : 'ltr'"
+      >
+        Direction: {{ dir.toUpperCase() }}
+      </button>
     </header>
 
     <!-- Tabs -->
@@ -62,7 +70,7 @@ const componentMap = {
     </nav>
 
     <!-- Content -->
-    <main class="app-content">
+    <main class="app-content" :dir="dir">
       <Suspense>
         <component :is="componentMap[activeTab]" />
         <template #fallback>
@@ -100,6 +108,19 @@ const componentMap = {
 .app-header__name {
   font-weight: 700;
   font-size: 15px;
+  color: var(--color-primary);
+}
+.app-header__dir-toggle {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.app-header__dir-toggle[aria-pressed='true'] {
+  border-color: var(--color-primary);
   color: var(--color-primary);
 }
 

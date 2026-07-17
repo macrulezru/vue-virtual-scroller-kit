@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends Record<string, unknown>">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import VirtualList from './VirtualList.vue'
 import type { VirtualListExpose } from '../types'
 
@@ -19,6 +19,22 @@ const props = withDefaults(
     maxVisibleRows?: number
     /** Allow typing to filter options */
     searchable?: boolean
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
+    /**
+     * Skip client-side filtering — `options` is assumed already filtered by the consumer
+     * (e.g. from a server response driven by the `search` event). Off by default.
+     */
+    remote?: boolean
+    /** Shows the #loading slot in the dropdown instead of options/empty. Off by default. */
+    isLoading?: boolean
+    /**
+     * Delay in ms before the `search` event fires after a keystroke. The input's own
+     * displayed value always updates instantly — only the emitted event is delayed.
+     * Default `0` (fires synchronously, matching prior versions); set e.g. `300` for
+     * `remote` search to avoid firing a request on every keystroke.
+     */
+    debounceMs?: number
   }>(),
   {
     modelValue: null,
@@ -30,6 +46,10 @@ const props = withDefaults(
     estimatedItemSize: 36,
     maxVisibleRows: 8,
     searchable: true,
+    motionBlur: false,
+    remote: false,
+    isLoading: false,
+    debounceMs: 0,
   },
 )
 
@@ -55,6 +75,7 @@ function getValue(item: T): unknown {
 }
 
 const filteredOptions = computed(() => {
+  if (props.remote) return props.options
   if (!props.searchable || !searchQuery.value.trim()) return props.options
   const q = searchQuery.value.toLowerCase()
   return props.options.filter((o) => getLabel(o).toLowerCase().includes(q))
@@ -115,11 +136,25 @@ function toggle(): void {
   }
 }
 
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
 function onSearchInput(e: Event): void {
   searchQuery.value = (e.target as HTMLInputElement).value
   highlightedIndex.value = -1
-  emit('search', searchQuery.value)
+  if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer)
+  if (props.debounceMs > 0) {
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null
+      emit('search', searchQuery.value)
+    }, props.debounceMs)
+  } else {
+    emit('search', searchQuery.value)
+  }
 }
+
+onUnmounted(() => {
+  if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer)
+})
 
 function onKeyDown(e: KeyboardEvent): void {
   if (!isOpen.value) {
@@ -174,7 +209,7 @@ function isHighlighted(index: number): boolean {
   return highlightedIndex.value === index
 }
 
-defineExpose({ open, close })
+defineExpose({ open, close, getScrollElement: () => listRef.value?.getScrollElement() ?? null })
 </script>
 
 <template>
@@ -220,7 +255,10 @@ defineExpose({ open, close })
 
     <!-- Dropdown -->
     <div v-if="isOpen" class="vvsk-select__dropdown" role="listbox">
-      <div v-if="filteredOptions.length === 0" class="vvsk-select__empty">
+      <div v-if="isLoading" class="vvsk-select__loading" aria-live="polite">
+        <slot name="loading">Loading…</slot>
+      </div>
+      <div v-else-if="filteredOptions.length === 0" class="vvsk-select__empty">
         <slot name="empty">No options</slot>
       </div>
       <VirtualList
@@ -231,6 +269,7 @@ defineExpose({ open, close })
         :estimated-item-size="estimatedItemSize"
         :style="{ height: `${dropdownHeight}px` }"
         :min-height="estimatedItemSize"
+        :motion-blur="motionBlur"
       >
         <template #default="{ item, index }">
           <div
@@ -363,6 +402,12 @@ defineExpose({ open, close })
 }
 
 .vvsk-select__empty {
+  padding: 12px;
+  text-align: center;
+  opacity: 0.5;
+}
+
+.vvsk-select__loading {
   padding: 12px;
   text-align: center;
   opacity: 0.5;

@@ -57,6 +57,7 @@ const totalCount = computed(() =>
 )
 
 const visibleInfo = ref({ start: 0, end: 0 })
+const stickyGroupHeaders = ref(false)
 const listRef = ref<{ toggle: (groupKey: string) => void; scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') => void } | null>(null)
 
 function collapseAll() {
@@ -112,6 +113,13 @@ const LANG_COLOR: Record<string, string> = {
         </div>
       </div>
 
+      <div class="demo-sidebar__group">
+        <label class="demo-sidebar__checkbox">
+          <input v-model="stickyGroupHeaders" type="checkbox" />
+          Sticky group headers (overlay)
+        </label>
+      </div>
+
       <div class="demo-code">&lt;GroupedVirtualList
   :groups="groups"
   :estimated-item-size="56"
@@ -132,7 +140,8 @@ const LANG_COLOR: Record<string, string> = {
         :groups="groups"
         :estimated-item-size="56"
         :estimated-group-header-size="44"
-        style="height: 100%;"
+        :sticky-group-headers="stickyGroupHeaders"
+        style="height: 100%; --vvsk-sticky-bg: var(--color-surface)"
         @visible-range-change="visibleInfo = $event"
       >
         <!-- Custom group header -->
@@ -195,6 +204,7 @@ const LANG_COLOR: Record<string, string> = {
 .demo-sidebar__group { display: flex; flex-direction: column; gap: 6px; }
 .demo-sidebar__label { font-size: 12px; color: var(--color-text-muted); font-weight: 600; }
 .demo-sidebar__row   { display: flex; gap: 6px; flex-wrap: wrap; }
+.demo-sidebar__checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-text-muted); cursor: pointer; }
 
 .demo-viewport { flex: 1; overflow: hidden; background: var(--color-bg); }
 

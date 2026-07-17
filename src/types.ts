@@ -21,6 +21,12 @@ export interface ScrollToOptions {
   align?: ScrollAlign
 }
 
+/** Options for `scrollTo` / `scrollToOffset` on VirtualList and friends. */
+export interface ScrollBehaviorOptions {
+  /** 'smooth' animates via the browser's native smooth-scroll; 'auto' jumps instantly (default). */
+  behavior?: ScrollBehavior
+}
+
 export interface VisibleRange {
   start: number
   end: number
@@ -59,13 +65,24 @@ export interface SortChange {
 
 /** Exposed API of VirtualList component (use instead of InstanceType for generic components) */
 export interface VirtualListExpose {
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') => void
-  scrollToOffset: (offset: number) => void
+  scrollTo: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    options?: ScrollBehaviorOptions,
+  ) => void
+  scrollToOffset: (offset: number, options?: ScrollBehaviorOptions) => void
   measureItem: (index: number, height: number) => void
+  /** Returns the element that actually scrolls (for pairing with VirtualScrollbar). */
+  getScrollElement: () => HTMLElement | null
 }
 
 /** Exposed API of GroupedVirtualList component */
 export interface GroupedVirtualListExpose {
   toggle: (groupKey: string) => void
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') => void
+  scrollTo: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    options?: ScrollBehaviorOptions,
+  ) => void
+  getScrollElement: () => HTMLElement | null
 }

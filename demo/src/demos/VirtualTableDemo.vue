@@ -2,6 +2,7 @@
 import { ref, shallowRef, computed } from 'vue'
 import VirtualTable from '../../../src/components/VirtualTable.vue'
 import { autoColWidths } from '../../../src/utils/autoColWidths'
+import { useRowSelection } from '../../../src/composables/useRowSelection'
 import type { ColumnDef, SortChange } from '../../../src/types'
 
 /* ── Data generation ──────────────────────────────────────────────────────── */
@@ -123,12 +124,16 @@ function recalcWidths() {
 
 /* ── Columns ──────────────────────────────────────────────────────────────── */
 const resizableColumns = ref(false)
+const reorderableColumns = ref(false)
 
 const columns = computed((): ColumnDef[] => {
   const getW = (key: keyof UserRow, fallback: number) =>
     autoWidths.value ? (colWidthMap.value.get(key) ?? fallback) : fallback
 
   return [
+    ...(selectableRows.value
+      ? [{ key: '__select', title: '', width: 36, fixed: 'left' as const }]
+      : []),
     { key: 'id',       title: '#',         width: getW('id', 64),        fixed: 'left' },
     { key: 'name',     title: 'Name',      width: getW('name', 160),     minWidth: 100 },
     { key: 'email',    title: 'Email',     width: getW('email', 200),    minWidth: 140 },
@@ -168,6 +173,22 @@ function toggleLazy(on: boolean) {
   if (on && lazyRows.value.length === 0) lazyLoad(true)
 }
 
+/* ── Row selection ────────────────────────────────────────────────────────── */
+const selectableRows = ref(false)
+const displayedRows = computed<UserRow[]>(() => (lazyMode.value ? lazyRows.value : rows.value))
+const selection = useRowSelection<UserRow>({ items: displayedRows })
+
+/* ── Column visibility ────────────────────────────────────────────────────── */
+const tableRef = ref()
+const hiddenColumns = ref<Set<string>>(new Set())
+
+function onColumnVisibilityChange({ key, visible }: { key: string; visible: boolean }) {
+  const next = new Set(hiddenColumns.value)
+  if (visible) next.delete(key)
+  else next.add(key)
+  hiddenColumns.value = next
+}
+
 /* ── Controls ─────────────────────────────────────────────────────────────── */
 const stickyHeader = ref(true)
 const stickyOffset = ref(0)
@@ -202,6 +223,15 @@ const PLAN_COLOR: Record<string, string> = {
         </div>
         <div v-if="sortStack.length > 0" class="demo-stat">
           Sort: <strong>{{ sortStack.map(s => `${s.key} ${s.direction}`).join(', ') }}</strong>
+        </div>
+        <div v-if="selectableRows" class="demo-stat">
+          Selected <strong>{{ selection.selectedItems.value.length.toLocaleString() }}</strong>
+          <button
+            v-if="selection.selectedItems.value.length > 0"
+            class="demo-btn"
+            style="margin-left: 8px; padding: 2px 8px; font-size: 11px"
+            @click="selection.clearSelection()"
+          >Clear</button>
         </div>
       </div>
 
@@ -239,6 +269,14 @@ const PLAN_COLOR: Record<string, string> = {
           Resizable columns
         </label>
         <label class="demo-sidebar__check">
+          <input v-model="reorderableColumns" type="checkbox" />
+          Reorderable columns (drag header)
+        </label>
+        <label class="demo-sidebar__check">
+          <input v-model="selectableRows" type="checkbox" />
+          Selectable rows (checkbox, <kbd>Shift</kbd>+click range)
+        </label>
+        <label class="demo-sidebar__check">
           <input
             :checked="autoWidths"
             type="checkbox"
@@ -253,6 +291,19 @@ const PLAN_COLOR: Record<string, string> = {
             @change="toggleLazy(!lazyMode)"
           />
           Lazy loading (infinite scroll)
+        </label>
+      </div>
+
+      <!-- Column visibility (static mode only — column-visibility API is wired to that table) -->
+      <div v-if="!lazyMode" class="demo-sidebar__group">
+        <label class="demo-sidebar__label">Columns</label>
+        <label v-for="col in RAW_COLS" :key="col.key" class="demo-sidebar__check">
+          <input
+            :checked="!hiddenColumns.has(col.key)"
+            type="checkbox"
+            @change="tableRef?.toggleColumnVisible(col.key)"
+          />
+          {{ col.title }}
         </label>
       </div>
 
@@ -280,6 +331,7 @@ const PLAN_COLOR: Record<string, string> = {
         :sortable="!multiSort"
         :multi-sort="multiSort"
         :resizable-columns="resizableColumns"
+        :reorderable-columns="reorderableColumns"
         :estimated-item-size="40"
         :on-load-more="() => lazyLoad(false)"
         :has-more="lazyHasMore"
@@ -289,8 +341,15 @@ const PLAN_COLOR: Record<string, string> = {
         @sort-change="onSortChange"
         @visible-range-change="visibleInfo = $event"
       >
-        <template #cell="{ row, column, value }">
-          <template v-if="column.key === 'status'">
+        <template #cell="{ row, column, value, index }">
+          <template v-if="column.key === '__select'">
+            <input
+              type="checkbox"
+              :checked="selection.isSelected(row as UserRow, index)"
+              @click="selection.toggle(row as UserRow, index, $event)"
+            />
+          </template>
+          <template v-else-if="column.key === 'status'">
             <span :class="`demo-badge demo-badge--${STATUS_COLOR[(row as UserRow).status]}`">{{ value }}</span>
           </template>
           <template v-else-if="column.key === 'plan'">
@@ -312,6 +371,7 @@ const PLAN_COLOR: Record<string, string> = {
       <!-- ── Static mode ───────────────────────────────────────────── -->
       <VirtualTable
         v-else
+        ref="tableRef"
         :columns="columns"
         :rows="rows"
         :sticky-header="stickyHeader"
@@ -321,13 +381,22 @@ const PLAN_COLOR: Record<string, string> = {
         :pinned-top-rows="pinnedTop"
         :pinned-bottom-rows="pinnedBottom"
         :resizable-columns="resizableColumns"
+        :reorderable-columns="reorderableColumns"
         :estimated-item-size="40"
         style="height: 100%; background: var(--color-bg); --vvsk-sticky-bg: var(--color-bg)"
         @sort-change="onSortChange"
         @visible-range-change="visibleInfo = $event"
+        @column-visibility-change="onColumnVisibilityChange"
       >
-        <template #cell="{ row, column, value }">
-          <template v-if="column.key === 'status'">
+        <template #cell="{ row, column, value, index }">
+          <template v-if="column.key === '__select'">
+            <input
+              type="checkbox"
+              :checked="selection.isSelected(row as UserRow, index)"
+              @click="selection.toggle(row as UserRow, index, $event)"
+            />
+          </template>
+          <template v-else-if="column.key === 'status'">
             <span :class="`demo-badge demo-badge--${STATUS_COLOR[(row as UserRow).status]}`">{{ value }}</span>
           </template>
           <template v-else-if="column.key === 'plan'">

@@ -1,7 +1,7 @@
 <script setup lang="ts" generic="T extends Record<string, unknown>">
 import { computed, ref, shallowRef } from 'vue'
 import VirtualList from './VirtualList.vue'
-import type { VirtualListExpose } from '../types'
+import type { ScrollBehaviorOptions, VirtualListExpose } from '../types'
 
 export interface TreeNode<N extends Record<string, unknown> = Record<string, unknown>> {
   id: string | number
@@ -28,11 +28,14 @@ const props = withDefaults(
     overscan?: number
     /** Called when a collapsed node with hasChildren=true needs children loaded */
     onLoadChildren?: (node: TreeNode<T>) => Promise<TreeNode<T>[]>
+    /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
+    motionBlur?: boolean
   }>(),
   {
     indent: 20,
     estimatedItemSize: 36,
     overscan: 5,
+    motionBlur: false,
   },
 )
 
@@ -110,11 +113,15 @@ function collapseAll(): void {
 }
 
 defineExpose({
-  scrollTo: (index: number, align?: 'start' | 'center' | 'end' | 'auto') =>
-    listRef.value?.scrollTo(index, align),
+  scrollTo: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    options?: ScrollBehaviorOptions,
+  ) => listRef.value?.scrollTo(index, align, options),
   expandAll,
   collapseAll,
   expandedIds: expandedIds as Readonly<typeof expandedIds>,
+  getScrollElement: () => listRef.value?.getScrollElement() ?? null,
 })
 
 function isRow(val: unknown): val is FlatTreeRow<T> {
@@ -133,12 +140,13 @@ function asRow(val: unknown): FlatTreeRow<T> {
     key-field="node.id"
     :estimated-item-size="estimatedItemSize"
     :overscan="overscan"
+    :motion-blur="motionBlur"
   >
     <template #default="{ item, index }">
       <div
         v-if="isRow(item)"
         class="vvsk-tree__row"
-        :style="{ paddingLeft: `${asRow(item).depth * indent}px` }"
+        :style="{ paddingInlineStart: `${asRow(item).depth * indent}px` }"
         role="treeitem"
         :aria-expanded="asRow(item).hasChildren ? asRow(item).isExpanded : undefined"
         :aria-level="asRow(item).depth + 1"
