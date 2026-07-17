@@ -21,7 +21,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # stylelint 17 requires Node >=20.19 — CSS syntax doesn't vary by Node version,
+      # so it's enough to run this once rather than pinning an older stylelint just to
+      # keep it working on the Node 18 leg.
       - run: npm run lint:css
+        if: matrix.node == 20
       - run: npm run test
       - run: npm run build
 
