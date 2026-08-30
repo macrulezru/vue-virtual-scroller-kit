@@ -1,9 +1,9 @@
 {
   "name": "vue-virtual-scroller-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Virtual list, table, grid and tree for Vue 3 — dynamic row heights, grouping, sticky headers, infinite scroll and SSR support.",
   "author": "macrulez <macrulezru@gmail.com> (https://macrulez.ru/en)",
-  "homepage": "https://github.com/macrulezru/vue-virtual-scroller-kit#readme",
+  "homepage": "https://npm.vuecraft.ru/en/packages/color-value-tools/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/macrulezru/vue-virtual-scroller-kit.git"
