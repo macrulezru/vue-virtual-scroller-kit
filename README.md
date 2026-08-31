@@ -2145,7 +2145,7 @@ MIT
 
 Danil Lisin Vladimirovich aka Macrulez
 
-GitHub: [macrulezru](https://github.com/macrulezru) · Website: [npm.vuecraft.ru/en/](https://npm.vuecraft.ru/en/packages/color-value-tools/)
+GitHub: [macrulezru](https://github.com/macrulezru) · Website: [npm.vuecraft.ru/en/](https://npm.vuecraft.ru/en/packages/vue-virtual-scroller-kit/)
 
 Questions and bugs — [issues](https://github.com/macrulezru/vue-virtual-scroller-kit/issues)
 
