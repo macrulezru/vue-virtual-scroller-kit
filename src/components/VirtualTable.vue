@@ -192,6 +192,14 @@ function getSortIcon(key: string): string | null {
   return entry.direction === 'asc' ? '↑' : '↓'
 }
 
+function getAriaSort(key: string): 'ascending' | 'descending' | 'none' | undefined {
+  if (!props.sortable && !props.multiSort) return undefined
+  const icon = getSortIcon(key)
+  if (icon === '↑') return 'ascending'
+  if (icon === '↓') return 'descending'
+  return 'none'
+}
+
 function getSortOrder(key: string): number | null {
   if (!props.multiSort || sortStack.value.length < 2) return null
   const idx = sortStack.value.findIndex((s) => s.key === key)
@@ -565,6 +573,7 @@ defineExpose({
             }"
             :style="getThStyle(col)"
             :data-col-key="col.key"
+            :aria-sort="getAriaSort(col.key)"
             @click="handleSortClick(col, $event)"
             @pointerdown="onHeaderPointerDown(col, $event)"
           >

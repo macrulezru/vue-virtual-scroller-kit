@@ -27,7 +27,6 @@ export interface UseDraggableListReturn {
 }
 
 export interface DraggableItemProps {
-  draggable: boolean
   'data-drag-index': number
   class: Record<string, boolean>
   onPointerdown: (e: PointerEvent) => void
@@ -210,7 +209,6 @@ export function useDraggableList<T>(options: UseDraggableListOptions<T>): UseDra
     const item = items.value[index]
     const disabled = isDragDisabled?.(item, index) ?? false
     return {
-      draggable: !disabled,
       'data-drag-index': index,
       class: {
         'vvsk-drag--dragging': isDragging.value && dragIndex.value === index,

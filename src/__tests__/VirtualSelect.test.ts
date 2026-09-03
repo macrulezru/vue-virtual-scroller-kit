@@ -117,4 +117,27 @@ describe('VirtualSelect', () => {
       expect(wrapper.find('.vvsk-select__empty').exists()).toBe(true)
     })
   })
+
+  describe('inner VirtualList wiring', () => {
+    it('does not leak value-field as a raw DOM attribute (regression: was passed instead of key-field)', async () => {
+      const wrapper = mount(VirtualSelect, { props: { options } })
+      await openDropdown(wrapper)
+
+      const list = wrapper.find('.vvsk-list')
+      expect(list.exists()).toBe(true)
+      expect(list.attributes('value-field')).toBeUndefined()
+    })
+
+    it('does not double up ARIA roles between the listbox and its options (regression: nested list/listitem)', async () => {
+      const wrapper = mount(VirtualSelect, { props: { options } })
+      await openDropdown(wrapper)
+
+      expect(wrapper.find('.vvsk-select__dropdown').attributes('role')).toBe('listbox')
+      // the inner VirtualList's own container/item roles must be suppressed so
+      // "option" elements are the listbox's only accessibility-tree children
+      expect(wrapper.find('[role="list"]').exists()).toBe(false)
+      expect(wrapper.find('[role="listitem"]').exists()).toBe(false)
+      expect(wrapper.findAll('[role="option"]').length).toBe(options.length)
+    })
+  })
 })

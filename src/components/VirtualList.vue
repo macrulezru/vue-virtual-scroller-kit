@@ -35,6 +35,18 @@ const props = withDefaults(
      * axes at runtime, so the component remounts instead of leaving the old axis wired up.
      */
     horizontal?: boolean
+    /**
+     * ARIA role for the scroll container. Set to `'none'` when a wrapping component
+     * (e.g. a combobox listbox) already owns the semantic role, so this element is
+     * removed from the accessibility tree instead of nesting one role inside another.
+     */
+    containerRole?: string
+    /**
+     * ARIA role for each row wrapper. Set to `'none'` when the slot content itself
+     * renders the row's real role (e.g. `treeitem`, `option`), so the wrapper doesn't
+     * produce an invalid nested-role accessibility tree.
+     */
+    itemRole?: string
   }>(),
   {
     keyField: 'id',
@@ -49,6 +61,8 @@ const props = withDefaults(
     recyclePool: false,
     motionBlur: false,
     horizontal: false,
+    containerRole: 'list',
+    itemRole: 'listitem',
   },
 )
 
@@ -290,8 +304,8 @@ function getItemKey(item: T, index: number): string | number {
           ? { overflowX: 'auto', position: 'relative' }
           : { overflowY: 'auto', position: 'relative' }
     "
-    role="list"
-    :aria-rowcount="items.length"
+    :role="containerRole"
+    :aria-rowcount="containerRole === 'none' ? undefined : items.length"
     :aria-busy="isLoading || undefined"
   >
     <!-- Skeleton: shown while list is empty AND loading -->
@@ -309,8 +323,8 @@ function getItemKey(item: T, index: number): string | number {
           :key="recyclePool ? slotIdx : getItemKey(item, index)"
           :data-virtual-index="index"
           :style="style"
-          role="listitem"
-          :aria-rowindex="index + 1"
+          :role="itemRole"
+          :aria-rowindex="itemRole === 'none' ? undefined : index + 1"
           @vue:unmounted="unobserveRow(index)"
         >
           <slot :item="item" :index="index" :style="style" />
