@@ -154,12 +154,25 @@ describe('useDraggableList', () => {
       }),
     )
     const disabledProps = drag!.getItemProps(0)
-    expect(disabledProps.draggable).toBe(false)
     expect(disabledProps.class['vvsk-drag--disabled']).toBe(true)
 
     disabledProps.onPointerdown(makePointerEvent('pointerdown'))
     await nextTick()
     expect(drag!.isDragging.value).toBe(false)
     wrapper.unmount()
+  })
+
+  it('does not set a native draggable attribute (regression: contradicted the pointer-only design)', () => {
+    const items = makeItems(2)
+    let drag: ReturnType<typeof useDraggableList<Item>>
+    mount(
+      defineComponent({
+        setup() {
+          drag = useDraggableList<Item>({ items: ref(items) })
+          return () => null
+        },
+      }),
+    )
+    expect('draggable' in drag!.getItemProps(0)).toBe(false)
   })
 })

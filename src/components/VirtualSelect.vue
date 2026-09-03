@@ -265,11 +265,13 @@ defineExpose({ open, close, getScrollElement: () => listRef.value?.getScrollElem
         v-else
         ref="listRef"
         :items="filteredOptions"
-        :value-field="valueField"
+        :key-field="valueField"
         :estimated-item-size="estimatedItemSize"
         :style="{ height: `${dropdownHeight}px` }"
         :min-height="estimatedItemSize"
         :motion-blur="motionBlur"
+        container-role="none"
+        item-role="none"
       >
         <template #default="{ item, index }">
           <div

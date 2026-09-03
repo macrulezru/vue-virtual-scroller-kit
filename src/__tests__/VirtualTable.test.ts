@@ -190,6 +190,43 @@ describe('VirtualTable', () => {
     })
   })
 
+  describe('aria-sort', () => {
+    it('sets aria-sort="none" on sortable headers before any click', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), sortable: true },
+      })
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__header-cell')[0].attributes('aria-sort')).toBe('none')
+    })
+
+    it('reflects ascending/descending state as it cycles', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), sortable: true },
+      })
+      await nextTick()
+      const header = wrapper.findAll('.vvsk-table__header-cell')[0]
+
+      await header.trigger('click')
+      expect(header.attributes('aria-sort')).toBe('ascending')
+
+      await header.trigger('click')
+      expect(header.attributes('aria-sort')).toBe('descending')
+
+      await header.trigger('click')
+      expect(header.attributes('aria-sort')).toBe('none')
+    })
+
+    it('does not set aria-sort when the table is not sortable', async () => {
+      const wrapper = mount(VirtualTable, {
+        props: { columns, rows: makeRows(3), sortable: false },
+      })
+      await nextTick()
+
+      expect(wrapper.findAll('.vvsk-table__header-cell')[0].attributes('aria-sort')).toBeUndefined()
+    })
+  })
+
   describe('column reordering', () => {
     // .trigger() can't set clientX/clientY on synthesized events in jsdom (getter-only on
     // MouseEvent.prototype), so dispatch real PointerEvents directly — same pattern as

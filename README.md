@@ -75,7 +75,7 @@ npm install
 npm run demo
 ```
 
-Opens at **http://localhost:5174**:
+Opens at **http://localhost:5173**:
 
 | Page | What it shows |
 |---|---|
@@ -922,6 +922,17 @@ A virtual grid that arranges items in rows and columns. Column count can be fixe
 
 `scroll`, `visible-range-change`.
 
+### Exposed API
+
+```ts
+gridRef.value?.scrollTo(index)
+gridRef.value?.scrollTo(index, { behavior: 'smooth' })
+gridRef.value?.getScrollElement() // pair with VirtualScrollbar
+```
+
+> Unlike the other components' `scrollTo`, `VirtualGrid` derives the target row from `index` and
+> doesn't take an `align` parameter.
+
 ### Example
 
 ```vue
@@ -1044,7 +1055,9 @@ interface FlatTreeRow<T> {
 ```ts
 treeRef.value?.expandAll()
 treeRef.value?.collapseAll()
-treeRef.value?.scrollTo(index)
+treeRef.value?.scrollTo(index, 'start')
+treeRef.value?.scrollTo(index, 'start', { behavior: 'smooth' })
+treeRef.value?.getScrollElement() // pair with VirtualScrollbar
 treeRef.value?.expandedIds  // Readonly<Ref<Set<string | number>>>
 ```
 
@@ -1199,7 +1212,7 @@ A searchable select input backed by a virtualized dropdown. Handles hundreds of 
 | `options` | `T[]` | — | Option objects |
 | `modelValue` | `T \| null` | `null` | Currently selected option |
 | `labelField` | `string` | `'label'` | Field to display in the trigger and dropdown |
-| `valueField` | `string` | `'value'` | Field used for equality comparison |
+| `valueField` | `string` | `'value'` | Field used for equality comparison — also used as the dropdown's row key, so it should be unique across `options` |
 | `placeholder` | `string` | `'Select an option…'` | Placeholder text |
 | `disabled` | `boolean` | `false` | Disable the select |
 | `clearable` | `boolean` | `false` | Show a clear button when a value is selected |
@@ -1323,6 +1336,10 @@ element exposed by any component above (via `getScrollElement()`), or any scroll
 directly. Renders a track + draggable thumb sized and positioned from `scrollHeight`/`clientHeight`/`scrollTop`,
 and drags with pointer events.
 
+The thumb is a full `role="scrollbar"` widget: `aria-orientation`/`aria-valuemin`/`aria-valuemax`/`aria-valuenow`
+reflect the current scroll position, and it's keyboard-operable — Arrow keys step, Home/End jump to
+the start/end, PageUp/PageDown jump by a viewport's worth.
+
 ### Props
 
 | Prop | Type | Default | Description |
@@ -1330,6 +1347,15 @@ and drags with pointer events.
 | `target` | `() => HTMLElement \| null` | — | Returns the scroll element to sync with |
 | `orientation` | `'vertical' \| 'horizontal'` | `'vertical'` | Scroll axis to track |
 | `minThumbSize` | `number` | `24` | Minimum thumb size in px, so a huge list doesn't shrink it to an ungrabbable sliver |
+
+### Exposed API
+
+```ts
+scrollbarRef.value?.refresh()
+```
+
+> Force-reattach and recompute against the current `target()` — useful after a manual DOM swap that
+> the component's own `ResizeObserver`/scroll listeners wouldn't otherwise pick up.
 
 ### CSS custom properties
 
@@ -1915,17 +1941,21 @@ const listRef = ref<VirtualListExpose | null>(null)
 
 | Feature | Implementation |
 |---|---|
-| `role="list"` / `role="listitem"` | Applied on `VirtualList` container and each visible row |
+| `role="list"` / `role="listitem"` | Applied on `VirtualList` container and each visible row (overridable via `containerRole`/`itemRole`) |
 | `aria-rowcount` | Set to total item count on the list container |
 | `aria-rowindex` | Set to `index + 1` on each visible row |
 | `aria-busy` | Set to `"true"` on the container while `isLoading` is true |
-| `role="grid"` / `role="gridcell"` | Used on `VirtualGrid` |
-| `aria-rowindex` / `aria-colindex` | Set on `VirtualGrid` cells |
-| `role="treeitem"` | Used on `VirtualTree` rows |
+| `role="grid"` / `role="row"` / `role="gridcell"` | Used on `VirtualGrid` — each row of cells is wrapped in `role="row"` |
+| `aria-rowindex` / `aria-colindex` | Set on `VirtualGrid` rows and cells |
+| `role="tree"` / `role="treeitem"` | Used on `VirtualTree` — the inner `VirtualList` suppresses its own `list`/`listitem` roles via `containerRole="tree"`/`itemRole="none"` so the tree composes without an extra nesting layer |
 | `aria-expanded` / `aria-level` | Set on tree rows with children |
-| `role="combobox"` / `role="listbox"` / `role="option"` | Used on `VirtualSelect` |
+| `role="combobox"` / `role="listbox"` / `role="option"` | Used on `VirtualSelect` — the inner `VirtualList` suppresses its own roles the same way as `VirtualTree` |
 | `aria-expanded` / `aria-haspopup` / `aria-selected` | Set on select trigger and options |
-| Keyboard support | Full keyboard navigation via `useVirtualKeyboardNav` |
+| `role="scrollbar"` | Used on `VirtualScrollbar`'s thumb |
+| `aria-orientation` / `aria-valuemin` / `aria-valuemax` / `aria-valuenow` | Set on `VirtualScrollbar`'s thumb, reflecting the live scroll position |
+| Keyboard support (`VirtualScrollbar`) | Arrow keys step, Home/End jump to the start/end, PageUp/PageDown jump by a viewport |
+| `aria-sort` | Set on `VirtualTable`'s sortable headers (`"ascending"`, `"descending"`, or `"none"`) |
+| Keyboard support (lists) | Full keyboard navigation via `useVirtualKeyboardNav` |
 
 ---
 
@@ -1993,12 +2023,16 @@ vue-virtual-scroller-kit
 │     Scroll restoration via sessionStorage
 │     DOM recycling pool (recyclePool prop)
 │     Optional horizontal layout (horizontal prop)
+│     containerRole/itemRole — overridable ARIA roles so a wrapping
+│     component (VirtualTree, VirtualSelect) can suppress list/listitem
+│     and own the accessibility tree itself
 │
 ├── GroupedVirtualList
 │     Flattens GroupDef[] → VirtualRow[] (headers + items)
 │     Animated collapse/expand state machine per group
 │     Optional sticky-header overlay (stickyGroupHeaders), tracks the group
 │     at visibleRange.start — not a real CSS sticky row (rows are absolute)
+│     Per-row-type size estimate (estimatedItemSize vs estimatedGroupHeaderSize)
 │     Backed by VirtualList
 │
 ├── VirtualTable
@@ -2014,10 +2048,13 @@ vue-virtual-scroller-kit
 │     Optional dynamicRowHeight: per-row wrapper (flex) + ResizeObserver,
 │     row height = max of that row's cells, instead of individually
 │     absolutely-positioned fixed-height cells
+│     role="row" wraps each row of gridcells in both layouts
 │     Backed by useVirtualScroll directly
 │
 ├── VirtualTree
 │     Recursive flattenNodes with lazy-load support
+│     container-role="tree" / item-role="none" on the inner VirtualList,
+│     so its own role="treeitem" rows compose correctly
 │     Backed by VirtualList
 │
 ├── InfiniteLoader
@@ -2028,18 +2065,21 @@ vue-virtual-scroller-kit
 ├── VirtualSelect
 │     Client-side filter or opt-in remote mode (debounced search event,
 │     isLoading slot), keyboard nav, open/close lifecycle
+│     container-role="none" / item-role="none" on the inner VirtualList,
+│     so the dropdown's own role="listbox"/role="option" compose correctly
 │     Backed by VirtualList
 │
 ├── VirtualScrollbar
 │     Decoupled from useVirtualScroll — syncs to any getScrollElement()
 │     via its own scroll/ResizeObserver listeners
 │     Pointer-drag thumb + click-to-jump track
+│     role="scrollbar" thumb with full keyboard support (see Accessibility)
 │
 ├── useVirtualKeyboardNav
 │     Standalone composable — keydown on target or document
 │
 ├── useDraggableList
-│     Pointer events (no HTML5 Drag API)
+│     Pointer events only (no HTML5 Drag API — no native draggable attribute)
 │     Ghost element via fixed positioning + Teleport
 │     Gap animation via translateY on neighbours
 │     Auto-scroll RAF loop when near scroll container edges
@@ -2103,7 +2143,7 @@ mount/reactivity overhead — still comfortably sub-millisecond to low-milliseco
 
 | Entry point | Peer deps | Notes |
 |---|---|---|
-| `vue-virtual-scroller-kit` | `vue ^3.3` | Full bundle — all components and composables |
+| `vue-virtual-scroller-kit` | `vue >=3.3.0` | Full bundle — all components and composables |
 
 The package ships as tree-shakeable ESM (`dist/index.js`) + CJS (`dist/index.cjs`) dual build. Importing only `VirtualList` and leaving `VirtualTable`, `VirtualTree`, etc. unused results in those modules being dropped by your bundler.
 

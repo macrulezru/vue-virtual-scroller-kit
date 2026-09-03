@@ -93,3 +93,34 @@ describe('VirtualGrid dynamicRowHeight', () => {
     wrapper.unmount()
   })
 })
+
+describe('VirtualGrid ARIA', () => {
+  it('wraps each row of gridcells in a role="row" element (plain branch)', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: { items: makeItems(20), columns: 2, rowHeight: 100, gap: 0 },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const rows = wrapper.findAll('[role="row"]')
+    expect(rows.length).toBeGreaterThan(0)
+    // every gridcell must have a role="row" ancestor, per the ARIA grid pattern
+    for (const cell of wrapper.findAll('[role="gridcell"]')) {
+      expect(cell.element.closest('[role="row"]')).not.toBeNull()
+    }
+    wrapper.unmount()
+  })
+
+  it('wraps each row of gridcells in a role="row" element (dynamicRowHeight branch)', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: { items: makeItems(20), columns: 2, rowHeight: 100, gap: 0, dynamicRowHeight: true },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    for (const cell of wrapper.findAll('[role="gridcell"]')) {
+      expect(cell.element.closest('[role="row"]')).not.toBeNull()
+    }
+    wrapper.unmount()
+  })
+})

@@ -39,6 +39,13 @@ const emit = defineEmits<{
 const listRef = ref<VirtualListExpose | null>(null)
 const visibleStart = ref(0)
 
+// Header rows get their own estimate — VirtualList's estimatedItemSize accepts a
+// per-row function, so this replaces the flat estimatedItemSize number that was
+// being passed for every row regardless of type.
+function estimateRowSize(row: VirtualRow<T>): number {
+  return row.type === 'header' ? props.estimatedGroupHeaderSize : props.estimatedItemSize
+}
+
 function onVisibleRangeChange(range: { start: number; end: number }): void {
   visibleStart.value = range.start
   emit('visible-range-change', range)
@@ -245,7 +252,7 @@ defineExpose({
       ref="listRef"
       :items="flatRows"
       key-field="_key"
-      :estimated-item-size="estimatedItemSize"
+      :estimated-item-size="estimateRowSize"
       :overscan="overscan"
       :motion-blur="motionBlur"
       @visible-range-change="onVisibleRangeChange"

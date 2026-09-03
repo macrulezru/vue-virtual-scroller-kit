@@ -81,3 +81,25 @@ describe('GroupedVirtualList sticky headers', () => {
     wrapper.unmount()
   })
 })
+
+describe('GroupedVirtualList estimatedGroupHeaderSize', () => {
+  it('estimates header rows separately from item rows (regression: was previously ignored)', async () => {
+    const wrapper = mount(GroupedVirtualList, {
+      props: { groups, estimatedItemSize: 50, estimatedGroupHeaderSize: 40 },
+    })
+    await nextTick()
+
+    const list = wrapper.findComponent(VirtualList) as unknown as {
+      props: (key: string) => unknown
+    }
+    const estimateFn = list.props('estimatedItemSize') as (
+      row: { type: 'header' | 'item' },
+      index: number,
+    ) => number
+
+    expect(typeof estimateFn).toBe('function')
+    expect(estimateFn({ type: 'header' }, 0)).toBe(40)
+    expect(estimateFn({ type: 'item' }, 1)).toBe(50)
+    wrapper.unmount()
+  })
+})

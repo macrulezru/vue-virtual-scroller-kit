@@ -56,6 +56,10 @@ const thumbOffsetRatio = computed(() => {
 
 const isNeeded = computed(() => thumbRatio.value < 1)
 
+// 0–100, the position of the thumb along its scrollable range — the standard
+// value range for a role="scrollbar" widget, independent of the target's real pixel size.
+const valueNow = computed(() => Math.round(thumbOffsetRatio.value * 100))
+
 // Clamped to a minimum px size so a huge list (e.g. 100k rows) doesn't shrink the thumb
 // to a sub-pixel sliver that's ungrabbable for mouse/touch/tests alike.
 const thumbSizePx = computed(() => {
@@ -139,6 +143,47 @@ function onThumbPointerDown(e: PointerEvent): void {
   window.addEventListener('pointercancel', onUp)
 }
 
+function scrollBy(delta: number): void {
+  const el = props.target()
+  if (!el) return
+  const next = Math.min(maxScroll.value, Math.max(0, scrollPos.value + delta))
+  if (isVertical.value) el.scrollTop = next
+  else setNormalizedScrollLeft(el, next)
+}
+
+function onThumbKeyDown(e: KeyboardEvent): void {
+  if (!props.target()) return
+  const step = Math.max(1, clientSize.value * 0.1)
+  switch (e.key) {
+    case 'ArrowUp':
+    case 'ArrowLeft':
+      e.preventDefault()
+      scrollBy(-step)
+      break
+    case 'ArrowDown':
+    case 'ArrowRight':
+      e.preventDefault()
+      scrollBy(step)
+      break
+    case 'PageUp':
+      e.preventDefault()
+      scrollBy(-clientSize.value)
+      break
+    case 'PageDown':
+      e.preventDefault()
+      scrollBy(clientSize.value)
+      break
+    case 'Home':
+      e.preventDefault()
+      scrollBy(-maxScroll.value)
+      break
+    case 'End':
+      e.preventDefault()
+      scrollBy(maxScroll.value)
+      break
+  }
+}
+
 function onTrackPointerDown(e: PointerEvent): void {
   if (e.target !== trackRef.value) return
   const el = props.target()
@@ -208,7 +253,14 @@ defineExpose({ refresh: attach })
       class="vvsk-scrollbar__thumb"
       :class="{ 'vvsk-scrollbar__thumb--dragging': isDragging }"
       :style="thumbStyle"
+      role="scrollbar"
+      tabindex="0"
+      :aria-orientation="orientation"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      :aria-valuenow="valueNow"
       @pointerdown.stop="onThumbPointerDown"
+      @keydown="onThumbKeyDown"
     />
   </div>
 </template>

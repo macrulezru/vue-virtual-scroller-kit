@@ -234,6 +234,8 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
             :ref="(el) => el && observeRow(el as Element, rowIndex)"
             :data-virtual-row-index="rowIndex"
             :style="rowWrapperStyle(top)"
+            role="row"
+            :aria-rowindex="rowIndex + 1"
             @vue:unmounted="unobserveRow(rowIndex)"
           >
             <div
@@ -256,7 +258,12 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
         </template>
 
         <template v-else>
-          <template v-for="{ rowIndex, cells, top } in visibleRows" :key="rowIndex">
+          <div
+            v-for="{ rowIndex, cells, top } in visibleRows"
+            :key="rowIndex"
+            role="row"
+            :aria-rowindex="rowIndex + 1"
+          >
             <div
               v-for="(cell, colIndex) in cells"
               :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
@@ -273,7 +280,7 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
                 :col="colIndex"
               />
             </div>
-          </template>
+          </div>
         </template>
       </div>
 

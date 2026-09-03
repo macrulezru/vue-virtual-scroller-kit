@@ -141,6 +141,8 @@ function asRow(val: unknown): FlatTreeRow<T> {
     :estimated-item-size="estimatedItemSize"
     :overscan="overscan"
     :motion-blur="motionBlur"
+    container-role="tree"
+    item-role="none"
   >
     <template #default="{ item, index }">
       <div

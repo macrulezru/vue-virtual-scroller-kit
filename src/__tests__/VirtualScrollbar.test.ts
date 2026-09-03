@@ -142,4 +142,49 @@ describe('VirtualScrollbar', () => {
     window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
     wrapper.unmount()
   })
+
+  it('exposes role="scrollbar" with aria-orientation/valuemin/valuemax/valuenow', async () => {
+    const target = makeTargetEl(350, 300, 1000) // maxScroll=700, scrollTop=350 → 50%
+    const wrapper = await mountScrollbar(target)
+
+    const thumb = wrapper.find('.vvsk-scrollbar__thumb')
+    expect(thumb.attributes('role')).toBe('scrollbar')
+    expect(thumb.attributes('tabindex')).toBe('0')
+    expect(thumb.attributes('aria-orientation')).toBe('vertical')
+    expect(thumb.attributes('aria-valuemin')).toBe('0')
+    expect(thumb.attributes('aria-valuemax')).toBe('100')
+    expect(thumb.attributes('aria-valuenow')).toBe('50')
+    wrapper.unmount()
+  })
+
+  it('moves the target scroll position on ArrowDown/ArrowUp keydown', async () => {
+    const target = makeTargetEl(100, 300, 1000)
+    const wrapper = await mountScrollbar(target)
+    const thumb = wrapper.find('.vvsk-scrollbar__thumb')
+
+    await thumb.trigger('keydown', { key: 'ArrowDown' })
+    expect((target as unknown as { state: { scrollTop: number } }).state.scrollTop).toBeGreaterThan(
+      100,
+    )
+
+    const afterDown = (target as unknown as { state: { scrollTop: number } }).state.scrollTop
+    await thumb.trigger('keydown', { key: 'ArrowUp' })
+    expect((target as unknown as { state: { scrollTop: number } }).state.scrollTop).toBeLessThan(
+      afterDown,
+    )
+    wrapper.unmount()
+  })
+
+  it('jumps to the start/end of the scroll range on Home/End keydown', async () => {
+    const target = makeTargetEl(350, 300, 1000)
+    const wrapper = await mountScrollbar(target)
+    const thumb = wrapper.find('.vvsk-scrollbar__thumb')
+
+    await thumb.trigger('keydown', { key: 'End' })
+    expect((target as unknown as { state: { scrollTop: number } }).state.scrollTop).toBe(700)
+
+    await thumb.trigger('keydown', { key: 'Home' })
+    expect((target as unknown as { state: { scrollTop: number } }).state.scrollTop).toBe(0)
+    wrapper.unmount()
+  })
 })
