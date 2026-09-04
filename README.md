@@ -76,6 +76,116 @@ const items: Row[] = Array.from({ length: 100_000 }, (_, i) => ({
 </template>
 ```
 
+### More examples
+
+#### Groups with sticky headers and collapsing
+
+`GroupedVirtualList` virtualizes a list inside collapsible sections — the current group's header stays pinned at the top, and `toggle()` expands or collapses any group programmatically.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { GroupedVirtualList } from 'vue-virtual-scroller-kit'
+import type { GroupDef, GroupedVirtualListExpose } from 'vue-virtual-scroller-kit'
+
+interface Contact {
+  id: number
+  name: string
+  email: string
+}
+
+const groups = ref<GroupDef<Contact>[]>([
+  {
+    key: 'a',
+    label: 'A',
+    items: [
+      { id: 1, name: 'Alice', email: 'alice@example.com' },
+      { id: 2, name: 'Aaron', email: 'aaron@example.com' },
+    ],
+  },
+  {
+    key: 'b',
+    label: 'B',
+    items: [{ id: 3, name: 'Bob', email: 'bob@example.com' }],
+    collapsed: true,
+  },
+])
+
+const listRef = ref<GroupedVirtualListExpose | null>(null)
+</script>
+
+<template>
+  <GroupedVirtualList
+    ref="listRef"
+    :groups="groups"
+    :estimated-item-size="56"
+    sticky-group-headers
+    style="height: 500px"
+  >
+    <template #group-header="{ group, toggle, isCollapsed }">
+      <div class="group-header" @click="toggle">
+        {{ isCollapsed ? '▶' : '▼' }} {{ group.label }}
+        <span>({{ group.items.length }})</span>
+      </div>
+    </template>
+
+    <template #default="{ item }">
+      <div class="contact-row">
+        <strong>{{ item.name }}</strong>
+        <span>{{ item.email }}</span>
+      </div>
+    </template>
+  </GroupedVirtualList>
+</template>
+```
+
+#### Drag-to-reorder without a single external library
+
+`useDraggableList` tracks the ghost element under the cursor, animates neighboring rows out of the way, and auto-scrolls the container near its edges — you just spread `getItemProps` across the markup.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useDraggableList } from 'vue-virtual-scroller-kit'
+
+interface Card {
+  id: number
+  label: string
+}
+
+const cards = ref<Card[]>(Array.from({ length: 50 }, (_, i) => ({ id: i, label: `Card ${i + 1}` })))
+const listRef = ref<HTMLElement | null>(null)
+
+const { isDragging, dragIndex, ghostStyle, getItemStyle, getItemProps } = useDraggableList({
+  items: cards,
+  scrollContainer: listRef,
+  onReorder: (newItems) => {
+    cards.value = newItems
+  },
+})
+</script>
+
+<template>
+  <div ref="listRef" style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; height: 500px">
+    <div
+      v-for="(card, index) in cards"
+      :key="card.id"
+      v-bind="getItemProps(index)"
+      :style="getItemStyle(index)"
+      class="card"
+    >
+      ⣿ {{ card.label }}
+    </div>
+  </div>
+
+  <Teleport to="body">
+    <div v-if="isDragging && dragIndex >= 0" class="card card--ghost" :style="ghostStyle">
+      ⣿ {{ cards[dragIndex]?.label }}
+    </div>
+  </Teleport>
+</template>
+```
+
 ---
 
 ## Documentation & links
