@@ -34,6 +34,17 @@ Virtual list, table, grid, tree, and select for Vue 3. Dynamic row heights measu
 
 ---
 
+## When you'd reach for this
+
+A plain v-for creates one DOM node per array item, so the difference between 50 rows and 50,000 becomes the difference between "just works" and "the tab hangs the browser" — vue-virtual-scroller-kit keeps only what's actually visible in the DOM.
+
+- **A data table grows faster than the screen can show it** — Thousands of rows, multi-column sorting, pinned rows, and infinite loading as you scroll — only the visible slice ever gets rendered, not the whole table at once.
+- **A long list is split into collapsible sections** — Product categories, calendar days, notification groups — both the groups and their contents stay virtualized, and the current section's header stays in view as you scroll through it.
+- **Items need to be reordered by dragging** — A playlist, a kanban column, a prioritized task list — items can be dragged and reordered with animated neighbor offsets and auto-scroll, even when only a fraction of the whole list is on screen.
+- **A dropdown searches a huge reference list** — A list of countries, tickers, or users running into the thousands — the dropdown itself stays fast through virtualization, and search with on-demand loading replaces rendering every option at once.
+
+---
+
 ## Installation
 
 Requires Vue `3.3+`. No other runtime dependencies — the package has zero dependencies of its own.
