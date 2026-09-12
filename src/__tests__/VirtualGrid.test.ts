@@ -123,4 +123,100 @@ describe('VirtualGrid ARIA', () => {
     }
     wrapper.unmount()
   })
+
+  // Regression: VirtualGrid never got the containerRole/itemRole override props that
+  // VirtualList/VirtualTree/VirtualSelect already have — role="grid"/"row"/"gridcell"
+  // was hardcoded with no escape hatch for embedding a grid inside another semantic widget.
+  it('defaults to role="grid"/"row"/"gridcell"', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: { items: makeItems(20), columns: 2, rowHeight: 100, gap: 0 },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    expect(wrapper.find('.vvsk-grid').attributes('role')).toBe('grid')
+    expect(wrapper.find('[role="row"]').exists()).toBe(true)
+    expect(wrapper.find('[role="gridcell"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('lets a wrapping component override containerRole/rowRole/itemRole (plain branch)', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: {
+        items: makeItems(20),
+        columns: 2,
+        rowHeight: 100,
+        gap: 0,
+        containerRole: 'none',
+        rowRole: 'none',
+        itemRole: 'none',
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    expect(wrapper.find('.vvsk-grid').attributes('role')).toBe('none')
+    expect(wrapper.find('[role="row"]').exists()).toBe(false)
+    expect(wrapper.find('[role="gridcell"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lets a wrapping component override containerRole/rowRole/itemRole (dynamicRowHeight branch)', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: {
+        items: makeItems(20),
+        columns: 2,
+        rowHeight: 100,
+        gap: 0,
+        dynamicRowHeight: true,
+        containerRole: 'none',
+        rowRole: 'none',
+        itemRole: 'none',
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    expect(wrapper.find('.vvsk-grid').attributes('role')).toBe('none')
+    expect(wrapper.find('[role="row"]').exists()).toBe(false)
+    expect(wrapper.find('[role="gridcell"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('drops aria-rowcount/aria-colcount/aria-rowindex/aria-colindex when roles are overridden away from the grid family', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: {
+        items: makeItems(20),
+        columns: 2,
+        rowHeight: 100,
+        gap: 0,
+        containerRole: 'none',
+        rowRole: 'none',
+        itemRole: 'none',
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const container = wrapper.find('.vvsk-grid')
+    expect(container.attributes('aria-rowcount')).toBeUndefined()
+    expect(container.attributes('aria-colcount')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps emitting aria-rowcount/aria-colcount/aria-rowindex/aria-colindex on the default roles', async () => {
+    const wrapper = mount(VirtualGrid, {
+      props: { items: makeItems(20), columns: 2, rowHeight: 100, gap: 0 },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const container = wrapper.find('.vvsk-grid')
+    expect(container.attributes('aria-rowcount')).toBe('10')
+    expect(container.attributes('aria-colcount')).toBe('2')
+    expect(wrapper.find('[role="row"]').attributes('aria-rowindex')).toBe('1')
+    expect(wrapper.find('[role="gridcell"]').attributes('aria-rowindex')).toBe('1')
+    expect(wrapper.find('[role="gridcell"]').attributes('aria-colindex')).toBe('1')
+    wrapper.unmount()
+  })
 })
