@@ -3,6 +3,14 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useVirtualScroll } from '../core/useVirtualScroll'
 import type { ScrollBehaviorOptions } from '../types'
 
+// A 'gridcell'/'cell'/'columnheader'/'rowheader' descendant requires a 'row' ancestor,
+// which itself requires a 'grid'/'table'/'treegrid' ancestor per WAI-ARIA — so, unlike
+// VirtualList's single containerRole/itemRole pair, overriding the container role here
+// also has to cascade to the row wrapper, or the remaining cell roles become invalid.
+const CONTAINER_GRID_ROLES = new Set(['grid', 'table', 'treegrid'])
+const ROW_ROLES = new Set(['row'])
+const CELL_ROLES = new Set(['gridcell', 'cell', 'columnheader', 'rowheader'])
+
 const props = withDefaults(
   defineProps<{
     items: T[]
@@ -27,6 +35,18 @@ const props = withDefaults(
     dynamicRowHeight?: boolean
     /** Rows rendered with estimated offsets during SSR (no measurement runs server-side). */
     ssrPreloadCount?: number
+    /**
+     * ARIA role for the scroll container. Set to `'none'` when a wrapping component
+     * already owns the semantic role, so this element is removed from the
+     * accessibility tree instead of nesting one role inside another. Also set
+     * `rowRole`/`itemRole` to `'none'` alongside it — a 'row'/'gridcell' role
+     * without a 'grid' ancestor is an invalid ARIA structure.
+     */
+    containerRole?: string
+    /** ARIA role for each row wrapper. */
+    rowRole?: string
+    /** ARIA role for each cell. */
+    itemRole?: string
   }>(),
   {
     columns: 0,
@@ -39,6 +59,9 @@ const props = withDefaults(
     motionBlur: false,
     dynamicRowHeight: false,
     ssrPreloadCount: 20,
+    containerRole: 'grid',
+    rowRole: 'row',
+    itemRole: 'gridcell',
   },
 )
 
@@ -213,9 +236,9 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
     ref="containerRef"
     class="vvsk-grid"
     style="overflow-y: auto; position: relative"
-    role="grid"
-    :aria-rowcount="rowCount"
-    :aria-colcount="colCount"
+    :role="containerRole"
+    :aria-rowcount="CONTAINER_GRID_ROLES.has(containerRole) ? rowCount : undefined"
+    :aria-colcount="CONTAINER_GRID_ROLES.has(containerRole) ? colCount : undefined"
     :aria-busy="isLoading || undefined"
   >
     <slot v-if="items.length === 0 && isLoading" name="skeleton">
@@ -238,17 +261,21 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
             :ref="(el) => el && observeRow(el as Element, rowIndex)"
             :data-virtual-row-index="rowIndex"
             :style="rowWrapperStyle(top)"
-            role="row"
-            :aria-rowindex="rowIndex + 1"
+            :role="rowRole"
+            :aria-rowindex="ROW_ROLES.has(rowRole) ? rowIndex + 1 : undefined"
             @vue:unmounted="unobserveRow(rowIndex)"
           >
             <div
               v-for="(cell, colIndex) in cells"
               :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
               :style="dynamicCellStyle()"
-              :role="cell ? 'gridcell' : undefined"
-              :aria-rowindex="cell ? Math.floor(cell.index / colCount) + 1 : undefined"
-              :aria-colindex="cell ? (cell.index % colCount) + 1 : undefined"
+              :role="cell ? itemRole : undefined"
+              :aria-rowindex="
+                cell && CELL_ROLES.has(itemRole) ? Math.floor(cell.index / colCount) + 1 : undefined
+              "
+              :aria-colindex="
+                cell && CELL_ROLES.has(itemRole) ? (cell.index % colCount) + 1 : undefined
+              "
             >
               <slot
                 v-if="cell"
@@ -265,16 +292,20 @@ defineExpose({ scrollTo, getScrollElement: () => containerRef.value })
           <div
             v-for="{ rowIndex, cells, top } in visibleRows"
             :key="rowIndex"
-            role="row"
-            :aria-rowindex="rowIndex + 1"
+            :role="rowRole"
+            :aria-rowindex="ROW_ROLES.has(rowRole) ? rowIndex + 1 : undefined"
           >
             <div
               v-for="(cell, colIndex) in cells"
               :key="cell ? getItemKey(cell.item, cell.index) : `empty-${rowIndex}-${colIndex}`"
               :style="cellStyle(colIndex, top)"
-              :role="cell ? 'gridcell' : undefined"
-              :aria-rowindex="cell ? Math.floor(cell.index / colCount) + 1 : undefined"
-              :aria-colindex="cell ? (cell.index % colCount) + 1 : undefined"
+              :role="cell ? itemRole : undefined"
+              :aria-rowindex="
+                cell && CELL_ROLES.has(itemRole) ? Math.floor(cell.index / colCount) + 1 : undefined
+              "
+              :aria-colindex="
+                cell && CELL_ROLES.has(itemRole) ? (cell.index % colCount) + 1 : undefined
+              "
             >
               <slot
                 v-if="cell"
