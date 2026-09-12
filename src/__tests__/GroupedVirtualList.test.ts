@@ -103,3 +103,57 @@ describe('GroupedVirtualList estimatedGroupHeaderSize', () => {
     wrapper.unmount()
   })
 })
+
+describe('GroupedVirtualList keyField', () => {
+  // Regression: the inner VirtualList was bound `key-field="_key"` (a literal string) —
+  // flattened rows never had a real `_key`, so VirtualList's own keying always fell back
+  // to array index regardless of the documented `keyField` prop, which could cause wrong
+  // DOM-node reuse across collapse/expand-driven index shifts.
+  it("threads a custom keyField into each flattened row's real _key", async () => {
+    const wrapper = mount(GroupedVirtualList, {
+      props: { groups, keyField: 'label' },
+    })
+    await nextTick()
+
+    const list = wrapper.findComponent(VirtualList) as unknown as {
+      props: (key: string) => unknown
+    }
+    const flatRows = list.props('items') as Array<{ type: string; item?: Item; _key?: string }>
+
+    const firstItemRow = flatRows.find((r) => r.type === 'item')!
+    expect(firstItemRow._key).toBe('item-a-A1') // keyField:'label' → item.label ("A1"), not the default item.id
+    wrapper.unmount()
+  })
+
+  it('gives header rows a stable, group-scoped _key distinct from item rows', async () => {
+    const wrapper = mount(GroupedVirtualList, { props: { groups } })
+    await nextTick()
+
+    const list = wrapper.findComponent(VirtualList) as unknown as {
+      props: (key: string) => unknown
+    }
+    const flatRows = list.props('items') as Array<{
+      type: string
+      groupKey?: string
+      _key?: string
+    }>
+
+    const headerRow = flatRows.find((r) => r.type === 'header')!
+    expect(headerRow._key).toBe(`header-${headerRow.groupKey}`)
+    wrapper.unmount()
+  })
+
+  it('falls back to a row-index key when the keyField value is missing', async () => {
+    const noIdGroups = [{ key: 'x', label: 'X', items: [{ label: 'no-id' } as unknown as Item] }]
+    const wrapper = mount(GroupedVirtualList, { props: { groups: noIdGroups, keyField: 'id' } })
+    await nextTick()
+
+    const list = wrapper.findComponent(VirtualList) as unknown as {
+      props: (key: string) => unknown
+    }
+    const flatRows = list.props('items') as Array<{ type: string; index: number; _key?: string }>
+    const itemRow = flatRows.find((r) => r.type === 'item')!
+    expect(itemRow._key).toBe(`item-${itemRow.index}`)
+    wrapper.unmount()
+  })
+})

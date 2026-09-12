@@ -3,6 +3,13 @@ import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { useVirtualScroll } from '../core/useVirtualScroll'
 import { normalizeScrollLeft } from '../utils/normalizeScrollLeft'
 
+// aria-rowcount/aria-rowindex are only valid on grid/table-family roles per
+// WAI-ARIA — not on the default containerRole:'list'/itemRole:'listitem'.
+// Emitting them there is an invalid role/attribute pairing, not just a
+// "role !== 'none'" question.
+const ROW_COUNT_ROLES = new Set(['grid', 'table', 'treegrid'])
+const ROW_INDEX_ROLES = new Set(['row', 'gridcell', 'cell', 'columnheader', 'rowheader'])
+
 const props = withDefaults(
   defineProps<{
     items: T[]
@@ -265,11 +272,15 @@ function restoreScroll(): void {
   }
 }
 
+const emitScroll = (e: Event) => emit('scroll', e)
+
 onMounted(() => {
   setupResizeObserver()
   if (!props.pageMode) {
-    const el = containerRef.value
-    el?.addEventListener('scroll', (e) => emit('scroll', e), { passive: true })
+    // getScrollEl() resolves to props.scrollElement when set — same target
+    // useVirtualScroll's own listener uses — not always containerRef itself.
+    const el = getScrollEl()
+    el?.addEventListener('scroll', emitScroll, { passive: true })
     el?.addEventListener('scroll', saveScroll, { passive: true })
   } else {
     window.addEventListener('scroll', saveScroll, { passive: true })
@@ -278,12 +289,32 @@ onMounted(() => {
   requestAnimationFrame(restoreScroll)
 })
 
+// scrollElement can change after mount (see the watcher above) — keep the
+// emit/restoreKey listeners in sync with whichever element is actually
+// scrolling, same as useVirtualScroll's own handleScroll listener does.
+watch(
+  () => props.scrollElement,
+  (newEl, oldEl) => {
+    if (props.pageMode) return
+    const prevEl = oldEl ?? containerRef.value
+    prevEl?.removeEventListener('scroll', emitScroll)
+    prevEl?.removeEventListener('scroll', saveScroll)
+    const nextEl = newEl ?? containerRef.value
+    nextEl?.addEventListener('scroll', emitScroll, { passive: true })
+    nextEl?.addEventListener('scroll', saveScroll, { passive: true })
+  },
+)
+
 onUnmounted(() => {
   resizeObserver?.disconnect()
   viewportRO?.disconnect()
   rowElements.clear()
   if (props.pageMode) {
     window.removeEventListener('scroll', saveScroll)
+  } else {
+    const el = getScrollEl()
+    el?.removeEventListener('scroll', emitScroll)
+    el?.removeEventListener('scroll', saveScroll)
   }
 })
 
@@ -305,7 +336,7 @@ function getItemKey(item: T, index: number): string | number {
           : { overflowY: 'auto', position: 'relative' }
     "
     :role="containerRole"
-    :aria-rowcount="containerRole === 'none' ? undefined : items.length"
+    :aria-rowcount="ROW_COUNT_ROLES.has(containerRole) ? items.length : undefined"
     :aria-busy="isLoading || undefined"
   >
     <!-- Skeleton: shown while list is empty AND loading -->
@@ -324,7 +355,7 @@ function getItemKey(item: T, index: number): string | number {
           :data-virtual-index="index"
           :style="style"
           :role="itemRole"
-          :aria-rowindex="itemRole === 'none' ? undefined : index + 1"
+          :aria-rowindex="ROW_INDEX_ROLES.has(itemRole) ? index + 1 : undefined"
           @vue:unmounted="unobserveRow(index)"
         >
           <slot :item="item" :index="index" :style="style" />

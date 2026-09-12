@@ -32,22 +32,6 @@ export interface VisibleRange {
   end: number
 }
 
-export interface VirtualScrollOptions {
-  itemCount: number | { value: number }
-  estimatedItemSize?: number
-  overscan?: number
-  getScrollElement: () => HTMLElement | null
-}
-
-export interface UseVirtualScrollReturn {
-  visibleRange: { readonly value: VisibleRange }
-  totalHeight: { readonly value: number }
-  offsetTop: (index: number) => number
-  scrollTo: (index: number, align?: ScrollAlign) => void
-  scrollToOffset: (offset: number) => void
-  measureItem: (index: number, height: number) => void
-}
-
 export type VirtualRowType = 'header' | 'item'
 
 export interface VirtualRow<T = unknown> {
@@ -56,6 +40,13 @@ export interface VirtualRow<T = unknown> {
   item?: T
   groupKey?: string
   groupLabel?: string
+  /**
+   * Stable key for the underlying VirtualList's own `key-field` — GroupedVirtualList
+   * populates this (header vs. item, group-scoped, falling back to `index`) since
+   * VirtualList's default key-field lookup can't unwrap `item`/distinguish row types
+   * on its own.
+   */
+  _key?: string
 }
 
 export interface SortChange {

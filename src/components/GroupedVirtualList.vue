@@ -82,17 +82,40 @@ const flatRows = computed<VirtualRow<T>[]>(() => {
   const rows: VirtualRow<T>[] = []
   let idx = 0
   for (const group of props.groups) {
-    rows.push({ type: 'header', index: idx++, groupKey: group.key, groupLabel: group.label })
+    rows.push({
+      type: 'header',
+      index: idx,
+      groupKey: group.key,
+      groupLabel: group.label,
+      _key: `header-${group.key}`,
+    })
+    idx++
     const fullyCollapsed =
       collapsedGroups.value.has(group.key) && !collapsingGroups.value.has(group.key)
     if (!fullyCollapsed) {
       for (const item of group.items) {
-        rows.push({ type: 'item', index: idx++, item, groupKey: group.key })
+        rows.push({
+          type: 'item',
+          index: idx,
+          item,
+          groupKey: group.key,
+          _key: rowKey(item, group.key, idx),
+        })
+        idx++
       }
     }
   }
   return rows
 })
+
+// Same key shape getRowKey() below derives from a row — computed up front so
+// it can be handed to VirtualList's own key-field (which can't unwrap `.item`
+// or distinguish header/item rows on its own).
+function rowKey(item: T, groupKey: string, index: number): string {
+  const field = props.keyField as keyof T
+  const val = (item as Record<string, unknown>)?.[field as string]
+  return val != null ? `item-${groupKey}-${val}` : `item-${index}`
+}
 
 const currentGroup = computed<GroupDef<T> | undefined>(() => {
   if (!props.stickyGroupHeaders) return undefined
@@ -175,11 +198,7 @@ onUnmounted(() => {
 })
 
 function getRowKey(row: VirtualRow<T>, index: number): string {
-  if (row.type === 'header') return `header-${row.groupKey}`
-  const field = props.keyField as keyof T
-  const item = row.item as Record<string, unknown>
-  const val = item?.[field as string]
-  return val != null ? `item-${row.groupKey}-${val}` : `item-${index}`
+  return row._key ?? `item-${index}`
 }
 
 // Cast helpers — keeps <T> out of template to avoid Prettier's HTML parser issue
