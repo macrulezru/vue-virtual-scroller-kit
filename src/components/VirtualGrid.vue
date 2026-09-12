@@ -25,6 +25,8 @@ const props = withDefaults(
      * when disabled — cells stay individually absolutely-positioned as before).
      */
     dynamicRowHeight?: boolean
+    /** Rows rendered with estimated offsets during SSR (no measurement runs server-side). */
+    ssrPreloadCount?: number
   }>(),
   {
     columns: 0,
@@ -36,6 +38,7 @@ const props = withDefaults(
     isLoading: false,
     motionBlur: false,
     dynamicRowHeight: false,
+    ssrPreloadCount: 20,
   },
 )
 
@@ -75,6 +78,7 @@ const {
   overscan: props.overscan,
   getScrollElement: () => containerRef.value,
   motionBlur: computed(() => props.motionBlur),
+  ssrPreloadCount: props.ssrPreloadCount,
 })
 
 watch(visibleRange, (range) => emit('visible-range-change', range))

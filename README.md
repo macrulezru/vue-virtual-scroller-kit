@@ -53,6 +53,15 @@ Requires Vue `3.3+`. No other runtime dependencies — the package has zero depe
 npm install vue-virtual-scroller-kit
 ```
 
+Import the stylesheet once, anywhere in your app entry — it styles things the
+inline `:style` bindings don't cover (table column resize/pin, tree toggle
+buttons, the select dropdown, the custom scrollbar thumb, and skeleton
+loading states):
+
+```ts
+import 'vue-virtual-scroller-kit/style.css'
+```
+
 Peer dependency:
 
 ```bash

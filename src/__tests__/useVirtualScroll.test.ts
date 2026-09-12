@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, ref, nextTick, type Ref } from 'vue'
 import { useVirtualScroll } from '../core/useVirtualScroll'
@@ -715,5 +715,58 @@ describe('useVirtualScroll', () => {
 
       unmount()
     })
+  })
+})
+
+describe('useVirtualScroll SSR', () => {
+  // recalcVisibleRange() only ever runs from onMounted, which Vue never calls
+  // during a real SSR render — without ssrPreloadCount seeding, visibleRange
+  // would stay {start:0, end:0} for the whole server-rendered HTML regardless
+  // of real item count.
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('seeds visibleRange up to ssrPreloadCount when window is unavailable', () => {
+    vi.stubGlobal('window', undefined)
+    const result = useVirtualScroll({
+      itemCount: 100,
+      estimatedItemSize: 40,
+      getScrollElement: () => null,
+      ssrPreloadCount: 5,
+    })
+    expect(result.visibleRange.value).toEqual({ start: 0, end: 4 })
+    expect(result.totalHeight.value).toBe(4000) // full 100-item estimate, not just the preloaded rows
+  })
+
+  it('clamps the SSR range to itemCount when there are fewer items than ssrPreloadCount', () => {
+    vi.stubGlobal('window', undefined)
+    const result = useVirtualScroll({
+      itemCount: 3,
+      estimatedItemSize: 40,
+      getScrollElement: () => null,
+      ssrPreloadCount: 20,
+    })
+    expect(result.visibleRange.value).toEqual({ start: 0, end: 2 })
+  })
+
+  it('defaults ssrPreloadCount to 20 when omitted', () => {
+    vi.stubGlobal('window', undefined)
+    const result = useVirtualScroll({
+      itemCount: 100,
+      estimatedItemSize: 40,
+      getScrollElement: () => null,
+    })
+    expect(result.visibleRange.value).toEqual({ start: 0, end: 19 })
+  })
+
+  it('does not affect the client (window present) initial range', () => {
+    const result = useVirtualScroll({
+      itemCount: 100,
+      estimatedItemSize: 40,
+      getScrollElement: () => null,
+      ssrPreloadCount: 5,
+    })
+    expect(result.visibleRange.value).toEqual({ start: 0, end: 0 })
   })
 })

@@ -40,6 +40,8 @@ const props = withDefaults(
     uniformRowHeight?: boolean
     /** Apply a CSS blur while scrolling fast, clearing once scrolling settles. Off by default. */
     motionBlur?: boolean
+    /** Rows rendered with estimated offsets during SSR (no measurement runs server-side). */
+    ssrPreloadCount?: number
   }>(),
   {
     stickyHeader: true,
@@ -59,6 +61,7 @@ const props = withDefaults(
     loadMoreThreshold: 150,
     uniformRowHeight: false,
     motionBlur: false,
+    ssrPreloadCount: 20,
   },
 )
 
@@ -420,6 +423,7 @@ const { visibleRange, totalHeight, offsetTop, scrollTo, scrollToOffset, measureI
     overscan: props.overscan,
     getScrollElement: () => scrollContainerRef.value,
     motionBlur: computed(() => props.motionBlur),
+    ssrPreloadCount: props.ssrPreloadCount,
   })
 
 const scrollContainerStyle = computed(() => ({

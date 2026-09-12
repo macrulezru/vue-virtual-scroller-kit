@@ -30,6 +30,13 @@ export interface UseVirtualScrollOptions {
    * A `Ref` is watched so the effect can be toggled at runtime.
    */
   motionBlur?: boolean | Ref<boolean>
+  /**
+   * Number of rows to include in `visibleRange` during SSR (`recalcVisibleRange`
+   * never runs server-side, so without this `visibleRange` would stay `{start:0,
+   * end:0}` through the whole server render). Estimated offsets only — real
+   * measurement still only happens client-side after mount. Default 20.
+   */
+  ssrPreloadCount?: number
 }
 
 export interface UseVirtualScrollReturn {
@@ -60,7 +67,17 @@ export function useVirtualScroll(options: UseVirtualScrollOptions): UseVirtualSc
 
   let manager = new PositionManager(getCount(), getEstimatedSize())
 
-  const visibleRange = ref<VisibleRange>({ start: 0, end: 0 })
+  // Vue never calls onMounted (and therefore never recalcVisibleRange()) during
+  // SSR, so without this visibleRange would render as {0,0} — i.e. nothing —
+  // regardless of real item count. Seed it with an estimated range instead, up
+  // to ssrPreloadCount, so server-rendered HTML has real content to hydrate
+  // against rather than a near-empty shell.
+  const isSSR = typeof window === 'undefined'
+  const initialRange: VisibleRange = isSSR
+    ? { start: 0, end: Math.max(0, Math.min(getCount(), options.ssrPreloadCount ?? 20) - 1) }
+    : { start: 0, end: 0 }
+
+  const visibleRange = ref<VisibleRange>(initialRange)
   const totalHeight = ref(manager.totalSize)
   const blurAmount = ref(0)
 

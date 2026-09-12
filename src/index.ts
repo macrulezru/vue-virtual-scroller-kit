@@ -6,7 +6,12 @@ export { normalizeScrollLeft, setNormalizedScrollLeft } from './utils/normalizeS
 export { PositionManager } from './core/PositionManager'
 export type { SizeProvider } from './core/PositionManager'
 export { useVirtualScroll } from './core/useVirtualScroll'
-export type { UseVirtualScrollOptions, UseVirtualScrollReturn } from './core/useVirtualScroll'
+export type {
+  UseVirtualScrollOptions,
+  UseVirtualScrollReturn,
+  UseVirtualScrollOptions as VirtualScrollOptions,
+  UseVirtualScrollReturn as VirtualScrollReturn,
+} from './core/useVirtualScroll'
 
 export { useVirtualKeyboardNav } from './composables/useVirtualKeyboardNav'
 export type {
@@ -48,8 +53,6 @@ export type {
   ScrollToOptions,
   ScrollBehaviorOptions,
   VisibleRange,
-  VirtualScrollOptions,
-  UseVirtualScrollReturn as VirtualScrollReturn,
   VirtualRow,
   VirtualRowType,
   SortChange,
