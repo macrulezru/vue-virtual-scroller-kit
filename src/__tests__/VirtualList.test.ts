@@ -108,3 +108,37 @@ describe('VirtualList scroll-element listeners', () => {
     sessionStorage.removeItem('vvsk:restore:vlist-scroll-el-test')
   })
 })
+
+describe('VirtualList keyField dot-path', () => {
+  // Regression: VirtualTree passes keyField="node.id" (rows nest the real domain
+  // node under `.node`) — a flat `item[keyField]` lookup for a property literally
+  // named "node.id" always misses, silently falling back to array index for every
+  // row's key regardless of the item's real identity.
+  it('resolves a nested path like "meta.id" for keying instead of falling back to index', async () => {
+    type NestedItem = { meta: { id: string }; label: string }
+    const items: NestedItem[] = [
+      { meta: { id: 'x' }, label: 'X' },
+      { meta: { id: 'y' }, label: 'Y' },
+    ]
+    const wrapper = mount(VirtualList, {
+      props: { items, keyField: 'meta.id' },
+      slots: { default: '<div>{{ params.item.label }}</div>' },
+    })
+    await nextTick()
+
+    const firstRow = wrapper.findAll('[data-virtual-index]')[0]
+    firstRow.element.setAttribute('data-marker', 'was-x')
+
+    // Reorder: X moves to the second position
+    await wrapper.setProps({ items: [items[1], items[0]] })
+    await nextTick()
+
+    // If keying correctly follows meta.id (not index), Vue reuses the same DOM
+    // node for X at its new position rather than recycling whatever was at index 0.
+    const rowsAfter = wrapper.findAll('[data-virtual-index]')
+    const xRowAfter = rowsAfter.find((w) => w.text().includes('X'))
+    expect(xRowAfter?.element.getAttribute('data-marker')).toBe('was-x')
+
+    wrapper.unmount()
+  })
+})

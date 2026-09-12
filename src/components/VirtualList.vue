@@ -318,8 +318,21 @@ onUnmounted(() => {
   }
 })
 
+// Regression: VirtualTree passes keyField="node.id" (its rows are wrapper
+// objects nesting the real domain node under `.node`) — a bare property
+// lookup for a key literally named "node.id" always misses, silently
+// falling back to `index` for every row. Resolve dot-separated paths so
+// keyField works for nested item shapes, not just top-level fields.
 function getItemKey(item: T, index: number): string | number {
-  const val = (item as Record<string, unknown>)[props.keyField as string]
+  const field = props.keyField as string
+  const val = field.includes('.')
+    ? field
+        .split('.')
+        .reduce<unknown>(
+          (acc, key) => (acc != null ? (acc as Record<string, unknown>)[key] : undefined),
+          item,
+        )
+    : (item as Record<string, unknown>)[field]
   return val != null ? (val as string | number) : index
 }
 </script>
